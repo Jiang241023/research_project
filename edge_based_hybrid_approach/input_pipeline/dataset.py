@@ -5,9 +5,8 @@ import pandas as pd
 from pathlib import Path
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from matplotlib import ticker
-
-from pytorch import DDACSDataset
-from utilis.utilis_DDACS import extract_point_cloud, extract_mesh, display_structure, extract_element_thickness, extract_point_springbackpy
+from DDACSDataset import DDACSDataset
+from edge_based_hybrid_approach.utils.utils_DDACS import extract_point_cloud, extract_mesh, display_structure, extract_element_thickness, extract_point_springbackpy
 # Setup data directory
 data_dir = Path("/mnt/data/darus/")
 
