@@ -25,32 +25,23 @@ component = "blank"
 timestep = 3
 
 with h5py.File(h5_path, "r") as f:
-    comp = f["OP10"][component]
+    # choose "blank"
+    op10 = f["OP10"]
+    comp = op10[component]
 
     # coordinates
-    coords_all = comp["node_coordinates"][...]           # (T,N,3) or (N,3)
-    if coords_all.ndim == 3:
-        coords_t = coords_all[timestep]                  # (N,3)
-    elif coords_all.ndim == 2:
-        coords_t = coords_all                            # already (N,3)
-    else:
-        raise ValueError(f"Unexpected coords shape: {coords_all.shape}")
+    coords_all = comp["node_coordinates"][:] # [:] tells h5py to read the entire dataset from disk into a NumPy array  
+    print(f"the dimension of coords_all parameter is: {coords_all.ndim}")
+    coords_with_definite_timestep = coords_all
 
-    # displacements (may be absent or (T,N,3) or (N,3))
-    disp_t = None
-    if "node_displacement" in comp:
-        disp_all = comp["node_displacement"][...]
-        if disp_all.ndim == 3:
-            disp_t = disp_all[timestep]                  # (N,3)
-        elif disp_all.ndim == 2:
-            disp_t = disp_all                            # (N,3)
-        else:
-            raise ValueError(f"Unexpected disp shape: {disp_all.shape}")
-
-print("coords_t shape:", coords_t.shape)
-print("disp_t   shape:", None if disp_t is None else disp_t.shape)
+    # displacements
+    disp_all = comp["node_displacement"][:] # tells h5py to read the entire dataset from disk into a NumPy array
+    print(f"the dimension of disp_all parameter is: {disp_all.ndim}")    
+    disp_with_definite_timestep = disp_all[timestep]                  
+print(f"the shape of coords with timestep {timestep}:", coords_with_definite_timestep.shape)
+print(f"the shape of disp with timestep {timestep}:", None if disp_with_definite_timestep is None else disp_with_definite_timestep.shape)
 
 # build features
-X_t = np.concatenate([coords_t, disp_t], axis=1) if disp_t is not None else coords_t
+X_t = np.concatenate([coords_with_definite_timestep, disp_with_definite_timestep], axis=1)
 print("Vertex feature matrix shape:", X_t.shape)
 print("First 5 rows:\n", X_t[:5])
