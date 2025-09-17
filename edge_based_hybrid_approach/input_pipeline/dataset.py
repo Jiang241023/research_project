@@ -51,20 +51,43 @@ for index in range(1): # If all datasets are needed, just set range(len(dataset)
         op10 = f["OP10"]
         comp = op10[component]
 
-        # coordinates
+        # coordinates (num_elements, 3) 
         coords_all = comp["node_coordinates"][:] # [:] tells h5py to read the entire dataset from disk into a NumPy array  
-        print(f"the dimension of coords_all parameter is: {coords_all.ndim}")
-        coords_with_definite_timestep = coords_all
+        coords_at_definite_timestep = coords_all
 
-        # displacements
-        disp_all = comp["node_displacement"][:] # tells h5py to read the entire dataset from disk into a NumPy array
-        print(f"the dimension of disp_all parameter is: {disp_all.ndim}")    
-        disp_with_definite_timestep = disp_all[timestep]
+        # displacements (timesteps, num_elements, 3) 
+        disp_all = comp["node_displacement"][:] # tells h5py to read the entire dataset from disk into a NumPy array   
+        disp_at_definite_timestep = disp_all[timestep]
 
-    print(f"the shape of coords with timestep {timestep}:", coords_with_definite_timestep.shape)
-    print(f"the shape of disp with timestep {timestep}:", disp_with_definite_timestep.shape)
+        # Stress tensor (timesteps, num_elements, 3, 6)
+        stress = comp["element_shell_stress"][:]  
+        stress_at_definite_timestep = stress[timestep]
+        
+
+        # Strain tensor (timesteps, num_elements, 2, 6)
+        strain = comp["element_shell_strain"][:] 
+        strain_at_definite_timestep = strain[timestep]
+
+    
+    print(f"the shape of coords at timestep {timestep}:", coords_at_definite_timestep.shape)
+    print(f"the shape of disp at timestep {timestep}:", disp_at_definite_timestep.shape)
 
     # build features
-    concatenated_representations = np.concatenate([coords_with_definite_timestep, disp_with_definite_timestep], axis=1)
-    print("Vertex feature matrix shape:", concatenated_representations.shape)
-    #print("First 5 rows:\n", concatenated_representations[:5])
+    concatenated_representations_vertex = np.concatenate([coords_at_definite_timestep, disp_at_definite_timestep], axis=1)
+    print("Vertex representation matrix shape:", concatenated_representations_vertex.shape)
+    print("First 5 rows of vetex representation matrix:\n", concatenated_representations_vertex[:5])
+
+    print("Stress shape:", stress.shape)
+    print("Strain shape:", strain.shape)
+
+    print(f"the shape of Stress at timestep {timestep}:", stress_at_definite_timestep.shape)
+    print(f"the shape of strain at timestep {timestep}:", strain_at_definite_timestep.shape)
+
+    # Example: get first element stress/strain
+    print("Stress first element:\n", stress_at_definite_timestep[0])
+    print("Strain first element:\n", strain_at_definite_timestep[0])
+
+
+
+
+    
