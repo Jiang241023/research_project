@@ -5,8 +5,11 @@ import pandas as pd
 from pathlib import Path
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from matplotlib import ticker
+import sys
+sys.path.append("../edge_based_hybrid_approach")
+
 from DDACSDataset import DDACSDataset
-from utils_DDACS import extract_point_cloud, extract_mesh, display_structure, extract_element_thickness, extract_point_springback
+from utils.utils_DDACS import extract_point_cloud, extract_mesh, display_structure, extract_element_thickness, extract_point_springback
 
 # Setup data directory
 data_dir = Path("/mnt/data/darus/")

@@ -8,7 +8,7 @@ from matplotlib import ticker
 #from DDACSDataset import DDACSDataset
 #from edge_based_hybrid_approach.utils.utils_DDACS import extract_point_cloud, extract_mesh, display_structure, extract_element_thickness, extract_point_springback
 from input_pipeline.DDACSDataset import DDACSDataset
-from utils.utils_DDACS import (
+from edge_based_hybrid_approach.utils.utils_DDACS import (
     extract_point_cloud, extract_mesh, display_structure,
     extract_element_thickness, extract_point_springback
 )
