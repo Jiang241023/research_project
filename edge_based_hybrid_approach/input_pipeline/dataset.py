@@ -48,6 +48,7 @@ for index in range(1): # If all datasets are needed, just set range(len(dataset)
 
     component = "blank"
     timestep = 3
+    OPERATION = 10
 
     with h5py.File(h5_path, "r") as f:
         # choose "blank"
@@ -55,12 +56,12 @@ for index in range(1): # If all datasets are needed, just set range(len(dataset)
         comp = op10[component]
 
         # coordinates (num_elements, 3) 
-        coords_all = comp["node_coordinates"][:] # [:] tells h5py to read the entire dataset from disk into a NumPy array  
-        coords_at_definite_timestep = coords_all
+        #coords_all = comp["node_coordinates"][:] # [:] tells h5py to read the entire dataset from disk into a NumPy array  
+        #coords_at_definite_timestep = coords_all
 
         # displacements (timesteps, num_elements, 3) 
-        disp_all = comp["node_displacement"][:] # tells h5py to read the entire dataset from disk into a NumPy array   
-        disp_at_definite_timestep = disp_all[timestep]
+        #disp_all = comp["node_displacement"][:] # tells h5py to read the entire dataset from disk into a NumPy array   
+        #disp_at_definite_timestep = disp_all[timestep]
 
         # Stress tensor (timesteps, num_elements, 3, 6)
         stress = comp["element_shell_stress"][:]  
@@ -71,19 +72,23 @@ for index in range(1): # If all datasets are needed, just set range(len(dataset)
         strain = comp["element_shell_strain"][:] 
         strain_at_definite_timestep = strain[timestep]
 
+        # element_shell_thickness 
+        thickness_at_definite_timestep = extract_element_thickness(h5_path, timestep=timestep, operation=OPERATION)
+
         # Get springback information
         final_coords, displacement_vectors = extract_point_springback(h5_path, operation=10)
 
 
-    print(f"the shape of final_coords at timestep {timestep}:", final_coords.shape)
+    print(f"the shape of final_coords timestep {timestep}:", final_coords.shape)
     print(f"the shape of displacement_vectors at timestep {timestep}:", displacement_vectors.shape)
-    print(f"the shape of coords at timestep {timestep}:", coords_at_definite_timestep.shape)
-    print(f"the shape of disp at timestep {timestep}:", disp_at_definite_timestep.shape)
+    #print(f"the shape of coords at timestep {timestep}:", coords_at_definite_timestep.shape)
+    #print(f"the shape of disp at timestep {timestep}:", disp_at_definite_timestep.shape)
+    print(f"the shape of thickness at timestep {timestep}:", thickness_at_definite_timestep.shape)
 
     # build features
-    concatenated_representations_vertex = np.concatenate([coords_at_definite_timestep, disp_at_definite_timestep], axis=1)
-    print("Vertex representation matrix shape:", concatenated_representations_vertex.shape)
-    print("First 5 rows of vetex representation matrix:\n", concatenated_representations_vertex[:5])
+    #concatenated_representations_vertex = np.concatenate([coords_at_definite_timestep, disp_at_definite_timestep], axis=1)
+    #print("Vertex representation matrix shape:", concatenated_representations_vertex.shape)
+    #print("First 5 rows of vetex representation matrix:\n", concatenated_representations_vertex[:5])
 
     print("Stress shape:", stress.shape)
     print("Strain shape:", strain.shape)
@@ -95,14 +100,12 @@ for index in range(1): # If all datasets are needed, just set range(len(dataset)
     print("first element of Stress:\n", stress_at_definite_timestep[0])
     print("first element of Strain:\n", strain_at_definite_timestep[0])
 
-    #Example: get 2 elements final_coords/displacement_vectors
+    #Example: get 2 elements final_coords/displacement_vectors of springback
     print("elements of final_coords:\n", final_coords[:2])
     print("elements of displacement_vectors:\n", displacement_vectors[:2])
 
-
-
-
-#ds = DDACSDataset(data_dir, "h5")
+    #Example: get 2 elements of thickness 
+    print("elements of thickness_at_definite_timestep:\n", thickness_at_definite_timestep[:2])
 
 # Always set before getting random operation
 torch.random.seed = 0
