@@ -15,6 +15,9 @@ from torch.utils.data import Dataset
 from torch.utils.data import DataLoader, random_split
 import torch
 
+# set random seed
+torch.manual_seed(0)
+
 # Setup data directory
 data_dir = Path("/mnt/data/darus/")
 
@@ -22,56 +25,61 @@ data_dir = Path("/mnt/data/darus/")
 dataset = DDACSDataset(data_dir, "h5")
 print(f"Loaded {len(dataset)} simulations")
 
-class StrainStressDataset(Dataset):
-    def __init__(self, base_dataset, component="blank", timestep=3, operation="OP10"):
+class StrainStressThicknessDataset(Dataset):
+    def __init__(self, base_dataset, component="blank", timestep=3, operation="OP10", op_num=10):
+        """
+        base_dataset: DDACSDataset providing (sim_id, metadata, h5_path)
+        component: e.g., "blank"
+        timestep: forming timestep to sample inputs from OP10
+        operation: "OP10" group name for inputs (stress/strain/thickness)
+        op_num: numeric operation for springback helper (usually 10)
+        """
         self.base_dataset = base_dataset
         self.component = component
         self.timestep = timestep
         self.operation = operation
+        self.op_num = op_num
 
     def __len__(self):
         return len(self.base_dataset)
 
     def __getitem__(self, idx):
         sim_id, metadata, h5_path = self.base_dataset[idx]
+
+        # --- inputs from OP10, element domain (m elements) ---
         with h5py.File(h5_path, "r") as f:
             comp = f[self.operation][self.component]
 
-            # inputs
-            stress = comp["element_shell_stress"][self.timestep]   # (m, 3, 6)
-            strain = comp["element_shell_strain"][self.timestep]   # (m, 2, 6)
+            stress_t = comp["element_shell_stress"][self.timestep]   # (m, 3, 6)
+            strain_t = comp["element_shell_strain"][self.timestep]   # (m, 2, 6)
 
-            stress_avg = stress.mean(axis=1)   # (m, 6)
-            strain_avg = strain.mean(axis=1)   # (m, 6)
-
-            thickness = comp["element_shell_thickness"][self.timestep]  # (m,)
-
-            # targets
-            disp = comp["node_displacement"][self.timestep]  # (n, 3)
-
-        # Stack features per element: [strain, stress, thickness]
-        # For simplicity: concatenate strain_avg + stress_avg + thickness[:,None]
-        x = np.concatenate([strain_avg, stress_avg, thickness[:,None]], axis=1)  # (m, 13)
-
-        y = disp  # displacement per node (different size than m!)
-
-        return torch.tensor(x, dtype=torch.float32), torch.tensor(y, dtype=torch.float32)
+            # concatenated stress/strain features from each layer at timestep 3
+            stress_feat = stress_t.reshape(stress_t.shape[0], -1)    # (m, 18)
+            strain_feat = strain_t.reshape(strain_t.shape[0], -1)    # (m, 12)
 
 
-N = len(dataset)  # 32071
+        thickness = extract_element_thickness(h5_path, timestep=self.timestep, operation=self.op_num)  # (m,)
+
+        # targets from springback OP10
+        final_coords, displacement_vectors = extract_point_springback(h5_path, operation=self.op_num)  # (n,3), (n,3)
+
+        # features per element: [strain_avg, stress_avg, thickness]
+        x = np.concatenate([stress_feat, strain_feat, thickness[:, None]], axis=1).astype(np.float32)  # (m, 13)
+
+        # target per node: displacement after springback
+        y = displacement_vectors.astype(np.float32)  # (n, 3)
+
+        return torch.from_numpy(x), torch.from_numpy(y)
+
 train_frac, test_frac, eval_frac = 0.7, 0.2, 0.1
 
-train_len = int(N * train_frac)
-test_len  = int(N * test_frac)
-eval_len  = N - train_len - test_len  # ensure exact
-
-torch.manual_seed(0)  # reproducible split
 train_dataset, test_dataset, eval_dataset = random_split(
-    StrainStressDataset(dataset),
-    [train_len, test_len, eval_len]
+    StrainStressThicknessDataset(dataset),
+    [train_frac, test_frac, eval_frac]
 )
 
 print(len(train_dataset), len(test_dataset), len(eval_dataset))
+
 for i in range(2):
     x, y = train_dataset[i]   # get i-th sample
     print(f"Sample {i}:")
@@ -80,10 +88,16 @@ for i in range(2):
     print("  first row of x:\n", x[0])
     print("  first row of y:\n", y[0])
 
-
-
 train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
 test_loader  = DataLoader(test_dataset, batch_size=4, shuffle=False)
 eval_loader  = DataLoader(eval_dataset, batch_size=4, shuffle=False)
 
+# get the first batch from the loader
+x_batch, y_batch = next(iter(train_loader))
+print("train batch -> x:", x_batch.shape, "y:", y_batch.shape)
 
+x_batch, y_batch = next(iter(test_loader))
+print("test batch -> x:", x_batch.shape, "y:", y_batch.shape)
+
+x_batch, y_batch = next(iter(eval_loader))
+print("eval batch -> x:", x_batch.shape, "y:", y_batch.shape)
