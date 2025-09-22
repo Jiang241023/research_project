@@ -80,13 +80,13 @@ train_dataset, test_dataset, eval_dataset = random_split(
 
 print(len(train_dataset), len(test_dataset), len(eval_dataset))
 
-for i in range(2):
-    x, y = train_dataset[i]   # get i-th sample
-    print(f"Sample {i}:")
-    print("  x shape:", x.shape)   # (m, 13)
-    print("  y shape:", y.shape)   # (n, 3)
-    print("  first row of x:\n", x[0])
-    print("  first row of y:\n", y[0])
+# for i in range(2):
+#     x, y = train_dataset[i]   # get i-th sample
+#     print(f"Sample {i}:")
+#     print("  x shape:", x.shape)   # (m, 13)
+#     print("  y shape:", y.shape)   # (n, 3)
+#     print("  first row of x:\n", x[0])
+#     print("  first row of y:\n", y[0])
 
 train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
 test_loader  = DataLoader(test_dataset, batch_size=4, shuffle=False)
