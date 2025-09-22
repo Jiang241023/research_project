@@ -26,7 +26,7 @@ dataset = DDACSDataset(data_dir, "h5")
 print(f"Loaded {len(dataset)} simulations")
 
 class StrainStressThicknessDataset(Dataset):
-    def __init__(self, base_dataset, component="blank", timestep=3, operation="OP10", op_num=10):
+    def __init__(self, base_dataset, component, timestep, operation, op_num):
         """
         base_dataset: DDACSDataset providing (sim_id, metadata, h5_path)
         component: e.g., "blank"
@@ -64,7 +64,7 @@ class StrainStressThicknessDataset(Dataset):
         final_coords, displacement_vectors = extract_point_springback(h5_path, operation=self.op_num)  # (n,3), (n,3)
 
         # features per element: [strain_avg, stress_avg, thickness]
-        x = np.concatenate([stress_feat, strain_feat, thickness[:, None]], axis=1).astype(np.float32)  # (m, 13)
+        x = np.concatenate([stress_feat, strain_feat, thickness[:, None]], axis=1).astype(np.float32)  # (m, 31)
 
         # target per node: displacement after springback
         y = displacement_vectors.astype(np.float32)  # (n, 3)
@@ -72,32 +72,36 @@ class StrainStressThicknessDataset(Dataset):
         return torch.from_numpy(x), torch.from_numpy(y)
 
 train_frac, test_frac, eval_frac = 0.7, 0.2, 0.1
+N = len(dataset)
+train_len = int(N * train_frac)
+test_len  = int(N * test_frac)
+eval_len  = N - train_len - test_len  
 
 train_dataset, test_dataset, eval_dataset = random_split(
-    StrainStressThicknessDataset(dataset),
-    [train_frac, test_frac, eval_frac]
+    StrainStressThicknessDataset(dataset, component="blank", timestep=3, operation="OP10", op_num=10),
+    [train_len , test_len, eval_len]
 )
 
 print(len(train_dataset), len(test_dataset), len(eval_dataset))
 
-# for i in range(2):
-#     x, y = train_dataset[i]   # get i-th sample
-#     print(f"Sample {i}:")
-#     print("  x shape:", x.shape)   # (m, 13)
-#     print("  y shape:", y.shape)   # (n, 3)
-#     print("  first row of x:\n", x[0])
-#     print("  first row of y:\n", y[0])
+for i in range(2):
+    x, y = train_dataset[i]   # get i-th sample
+    print(f"Sample {i}:")
+    print("  x shape:", x.shape)   # (m, 13)
+    print("  y shape:", y.shape)   # (n, 3)
+    print("  first row of x:\n", x[0])
+    print("  first row of y:\n", y[0])
 
 train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
 test_loader  = DataLoader(test_dataset, batch_size=4, shuffle=False)
 eval_loader  = DataLoader(eval_dataset, batch_size=4, shuffle=False)
 
 # get the first batch from the loader
-x_batch, y_batch = next(iter(train_loader))
-print("train batch -> x:", x_batch.shape, "y:", y_batch.shape)
+# x_batch, y_batch = next(iter(train_loader))
+# print("train batch -> x:", x_batch.shape, "y:", y_batch.shape)
 
-x_batch, y_batch = next(iter(test_loader))
-print("test batch -> x:", x_batch.shape, "y:", y_batch.shape)
+# x_batch, y_batch = next(iter(test_loader))
+# print("test batch -> x:", x_batch.shape, "y:", y_batch.shape)
 
-x_batch, y_batch = next(iter(eval_loader))
-print("eval batch -> x:", x_batch.shape, "y:", y_batch.shape)
+# x_batch, y_batch = next(iter(eval_loader))
+# print("eval batch -> x:", x_batch.shape, "y:", y_batch.shape)
