@@ -1,0 +1,196 @@
+import torch, math
+import torch.nn as nn
+import torch.nn.functional as F
+
+class GINLayer(nn.Module):
+    def __init__(self, d_in, d_hid, eps_init=0.0, p_drop=0.0):
+        super().__init__()
+        self.eps = nn.Parameter(torch.tensor(eps_init))
+        self.mlp = nn.Sequential(
+            nn.Linear(d_in, d_hid), nn.ReLU(), nn.Dropout(p_drop),
+            nn.Linear(d_hid, d_hid)
+        )
+
+    def forward(self, X, row, col, num_nodes):
+        # row: src indices (j), col: dst indices (i) for edges j->i
+        agg = torch.zeros(num_nodes, X.size(1), device=X.device)
+        agg.index_add_(0, col, X[row])   # sum_j X_j into node i
+        out = self.mlp((1 + self.eps) * X + agg)
+        return out
+
+class TopoPositionalEmbedding(nn.Module):
+    def __init__(self, d_hid, d_out):
+        super().__init__()
+        self.theta = nn.Parameter(torch.empty(2*d_hid))   # scales for [hA|hAc]
+        nn.init.normal_(self.theta, std=0.02)
+        self.proj = nn.Linear(2*d_hid, d_out)
+
+    @staticmethod
+    def signed_sqrt(x):
+        return torch.sign(x) * torch.sqrt(torch.clamp(torch.abs(x), 1e-12))
+
+    def forward(self, X, hA, hAc):
+        h = torch.cat([hA, hAc], dim=-1)           # Eq. (3)
+        h = self.signed_sqrt(F.relu(h)) - self.signed_sqrt(F.relu(-h))
+        h = h * self.theta                         # channelwise ⊙ θ_pe
+        delta = self.proj(h)
+        X0 = X + delta                             # SUM aggregator → Eq. (4)
+        return X0
+
+class FlexibleAttention(nn.Module):
+    def __init__(self, d_model, n_heads=4, d_edge=64, p_drop=0.0, neighbor_mask=False):
+        super().__init__()
+        self.nh = n_heads
+        self.dk = d_model // n_heads
+        self.neighbor_mask = neighbor_mask
+
+        self.Wq = nn.Linear(d_model, d_model)
+        self.Wk = nn.Linear(d_model, d_model)
+        self.Wv = nn.Linear(d_model, d_model)
+
+        # e_ij = Activation( ρ( [q_i || k_j || q_i⊙k_j || q_i-k_j] W_e ) )
+        self.edge_mlp = nn.Sequential(
+            nn.Linear(4*self.dk, d_edge), nn.ReLU(),
+            nn.Linear(d_edge, d_edge)
+        )
+        self.WEv = nn.Linear(d_edge, d_model)
+        self.drop = nn.Dropout(p_drop)
+
+    @staticmethod
+    def chunk_heads(x, nh):
+        N, D = x.shape
+        return x.view(N, nh, D//nh).transpose(0,1)   # (H, N, Dh)
+
+    def forward(self, X, mask_adj=None):
+        N, D = X.shape
+        H, Dh = self.nh, self.dk
+
+        Q = self.chunk_heads(self.Wq(X), H)  # (H,N,Dh)
+        K = self.chunk_heads(self.Wk(X), H)
+        V = self.chunk_heads(self.Wv(X), H)
+
+        # scores = QK^T / sqrt(Dh)
+        scores = torch.einsum('hnd,hmd->hnm', Q, K) / math.sqrt(Dh)  # (H,N,N)
+
+        # Optional neighbor mask (keep self)
+        if self.neighbor_mask and mask_adj is not None:
+            scores = scores.masked_fill(~mask_adj.bool().unsqueeze(0), float('-inf'))
+
+        attn = torch.softmax(scores, dim=-1)                                   # Eq. (9)
+
+        # Build edge embeddings e_ij for all pairs attended
+        # (H,N,N,Dh) features → (H,N,N,d_edge) via MLP
+        q_exp = Q.unsqueeze(2).expand(-1, -1, N, -1)
+        k_exp = K.unsqueeze(1).expand(-1, N, -1, -1)
+        feats = torch.cat([q_exp, k_exp, q_exp*k_exp, q_exp-k_exp], dim=-1)
+        e_ij = self.edge_mlp(feats)                                            # Eq. (8)
+        EVal = self.WEv(e_ij)                                                  # (H,N,N,D)
+
+        # Apply attention to values and add edge value
+        Vexp = V.unsqueeze(2).expand(-1, -1, N, -1)                            # (H,N,N,Dh)
+        out = torch.einsum('hnm,hnmd->hnd', attn, Vexp)                        # Σ_j α_ij W_V X_j
+        out_e = torch.einsum('hnm,hnmd->hnd', attn, EVal)                      # Σ_j α_ij W_Ev ê_ij
+        Hcat = out + out_e                                                     # Eq. (10)
+        Hcat = Hcat.transpose(0,1).contiguous().view(N, D)
+        return self.drop(Hcat)
+
+class GraphSE(nn.Module):
+    def __init__(self, d_model, r=4):
+        super().__init__()
+        d_mid = max(8, d_model // r)
+        self.lin1 = nn.Linear(d_model, d_mid)   # LIN1
+        self.lin2 = nn.Linear(d_mid, d_model)   # LIN2
+
+    def forward(self, X):
+        Xbar = X.sum(dim=0, keepdim=True)                # READOUT sum, (1,d)
+        y = F.relu(self.lin1(Xbar))                      # Eq. (14)
+        y = torch.sigmoid(self.lin2(y))                  # Eq. (15) → Y_G^l
+        Xg = X * y                                       # broadcast gating, Eq. (16)
+        return Xg, Xbar, y
+
+class VertexHybridBlock(nn.Module):
+    def __init__(self, d_model, n_heads=4, p_drop=0.1, neighbor_mask=False):
+        super().__init__()
+        self.gin_A  = GINLayer(d_model, d_model, p_drop=p_drop)
+        self.gin_Ac = GINLayer(d_model, d_model, p_drop=p_drop)
+        self.attn   = FlexibleAttention(d_model, n_heads=n_heads, p_drop=p_drop,
+                                        neighbor_mask=neighbor_mask)
+        self.norm1  = nn.LayerNorm(d_model)
+        self.norm2  = nn.LayerNorm(d_model)
+        self.se     = GraphSE(d_model)
+        self.ff     = nn.Sequential(
+            nn.Linear(d_model, 4*d_model), nn.ReLU(), nn.Dropout(p_drop),
+            nn.Linear(4*d_model, d_model)
+        )
+
+    def forward(self, X, A_edges, Ac_edges, num_nodes, attn_mask=None):
+        rowA, colA = A_edges   # tensors (E,)
+        rowC, colC = Ac_edges
+
+        XA  = self.gin_A (X, rowA, colA, num_nodes)      # X_MPNN,A^l
+        XAc = self.gin_Ac(X, rowC, colC, num_nodes)      # X_MPNN,Ac^l
+        X1 = self.norm1(X + XA + XAc)                    # Eq. (12) before attention
+
+        Xatt = self.attn(X1, attn_mask)                  # Eqs. (8)–(11)
+        X2 = self.norm2(X1 + Xatt)
+
+        Xg, Xbar, gate = self.se(X2)                     # Eqs. (13)–(16)
+        Xout = X2 + self.ff(Xg)                          # Eq. (17) (MLP on gated)
+        return Xout
+
+class InitialTPE(nn.Module):
+    def __init__(self, d_in, d_model, p_drop=0.1):
+        super().__init__()
+        self.proj_in = nn.Linear(d_in, d_model)
+        self.gin_A   = GINLayer(d_model, d_model, p_drop=p_drop)
+        self.gin_Ac  = GINLayer(d_model, d_model, p_drop=p_drop)
+        self.tpe     = TopoPositionalEmbedding(d_model, d_model)
+        self.norm    = nn.LayerNorm(d_model)
+
+    def forward(self, X_in, A_edges, Ac_edges, num_nodes):
+        X = self.proj_in(X_in)
+        hA  = self.gin_A (X, *A_edges, num_nodes)
+        hAc = self.gin_Ac(X, *Ac_edges, num_nodes)
+        X0  = self.tpe(X, hA, hAc)      # Eq. (4)
+        return self.norm(X0)
+
+class VertexHybridModel(nn.Module):
+    def __init__(self, d_in=31, d_model=128, n_layers=3, n_heads=4, p_drop=0.1, neighbor_mask=False):
+        super().__init__()
+        self.tpe = InitialTPE(d_in, d_model, p_drop)
+        self.blocks = nn.ModuleList([
+            VertexHybridBlock(d_model, n_heads, p_drop, neighbor_mask)
+            for _ in range(n_layers)
+        ])
+        self.head = nn.Linear(d_model, 3)   # displacement (dx,dy,dz)
+
+    def forward(self, X_in, A_edges, Ac_edges, num_nodes, attn_mask=None):
+        X = self.tpe(X_in, A_edges, Ac_edges, num_nodes)
+        for blk in self.blocks:
+            X = blk(X, A_edges, Ac_edges, num_nodes, attn_mask)
+        return self.head(X)   # (n,3)
+
+def build_undirected_edges_from_elements(elements, num_nodes, device="cpu"):
+    # connect all pairs inside each element (clique per face)
+    pairs = set()
+    for e in elements.tolist():
+        k = len(e)
+        for a in range(k):
+            for b in range(a+1, k):
+                i, j = e[a], e[b]
+                pairs.add((i,j)); pairs.add((j,i))
+    row, col = zip(*pairs)
+    return torch.tensor(row, dtype=torch.long, device=device), \
+           torch.tensor(col, dtype=torch.long, device=device)
+
+def build_two_hop_edges(row, col, num_nodes, device="cpu"):
+    # simple Ac baseline: 2-hop adjacency (excluding self), undirected
+    A = torch.sparse_coo_tensor(
+        torch.stack([row, col], 0), torch.ones(row.numel()), (num_nodes, num_nodes)
+    ).coalesce()
+    A2 = torch.sparse.mm(A, A).coalesce()             # A^2
+    idx = A2.indices()
+    # remove self loops and edges already in A if you want strictly 2-hop:
+    keep = idx[0] != idx[1]
+    row2, col2 = idx[0][keep], idx[1][keep]
+    return row2.to(device), col2.to(device)
