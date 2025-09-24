@@ -63,7 +63,7 @@ class StrainStressThicknessDataset(Dataset):
         # targets from springback OP10
         final_coords, displacement_vectors = extract_point_springback(h5_path, operation=self.op_num)  # (n,3), (n,3)
 
-        # features per element: [strain_avg, stress_avg, thickness]
+        # features per element: [stress_feat, strain_feat, thickness]
         x = np.concatenate([stress_feat, strain_feat, thickness[:, None]], axis=1).astype(np.float32)  # (m, 31)
 
         # target per node: displacement after springback
