@@ -16,8 +16,8 @@ from torch.utils.data import DataLoader, random_split
 import torch
 import torch.nn as nn
 from tqdm import tqdm
-from mpl_toolkits.mplot3d import Axes3D
-import matplotlib.pyplot as plt
+from model.vertex_based_model import VertexHybridModel
+
 
 # set random seed
 torch.manual_seed(0)
@@ -117,20 +117,7 @@ def prepare_sample(h5_path, component="blank", op_form=10, timestep=3):
     #print(f"one of node_displacement:\n {node_displacement[:1]}")
     return average_node_features, node_displacement
 
-class NodeMLP(nn.Module):
-    def __init__(self, in_dim=31, hidden_dim=64, out_dim=3):
-        super().__init__()
-        self.mlp = nn.Sequential(
-            nn.Linear(in_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, out_dim)
-        )
-
-    def forward(self, x):  # x: (n, 31)
-        return self.mlp(x)  # (n, 3)
-
+# Wrap full dataset
 class FormingDisplacementDataset(Dataset):
     def __init__(self, base_dataset):  # base_dataset = DDACSDataset(...)
         self.base_dataset = base_dataset
@@ -143,51 +130,70 @@ class FormingDisplacementDataset(Dataset):
         x, y = prepare_sample(h5_path)  # from earlier
         return torch.tensor(x, dtype=torch.float32), torch.tensor(y, dtype=torch.float32)
     
-# Wrap full dataset with your custom Dataset class
+# Wrap full dataset
 full_dataset = FormingDisplacementDataset(dataset)
 
 # Then split using random_split
 train_size = int(0.9 * len(full_dataset))
 val_size = len(full_dataset) - train_size
 
-train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size])
+train_frac, test_frac, eval_frac = 0.7, 0.2, 0.1
+
+train_dataset, test_dataset, eval_dataset = random_split(full_dataset, [train_frac, test_frac, eval_frac])
+
+print(len(train_dataset), len(test_dataset), len(eval_dataset))
 
 train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
-val_loader = DataLoader(val_dataset, batch_size=16)
+test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False)
+eval_loader = DataLoader(eval_dataset, batch_size=16, shuffle=False)
+
+# Define model parameters
+in_dim = 31          # input feature size per node
+hidden_dim = 64      # hidden layer size (changeable)
+out_dim = 3          # output displacement per node (x, y, z)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-model = NodeMLP(in_dim=31, hidden_dim=128, out_dim=3).to(device)
+# Initialize model
+model = VertexHybridModel(in_dim, hidden_dim, out_dim).to(device)
+
+# Define optimizer and loss
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 criterion = nn.MSELoss()
 
-num_epochs = 10
+# Create dummy adjacency matrices (identity for now)
+def create_identity_adj(n):
+    return torch.eye(n).to(device)
 
-for epoch in range(num_epochs):
+# Training loop
+for epoch in range(5):  # Change number of epochs as needed
     model.train()
     total_loss = 0.0
-    for batch in tqdm(train_loader, desc=f"Epoch {epoch+1} [Train]"):
-        x, y = batch  # each is (1, n, d)
-        x = x.squeeze(0).to(device)  # (n, 31)
-        y = y.squeeze(0).to(device)  # (n, 3)
+
+    pbar = tqdm(train_loader, desc=f"Epoch {epoch+1} [Train]", unit="batch")
+    for X, Y in pbar:
+        X, Y = X.to(device), Y.to(device)
+        n = X.shape[1]
+
+        # Use identity matrix as dummy adjacency
+        A = create_identity_adj(n)
+        A_c = create_identity_adj(n)
+
+        # Model expects (n, in_dim), we loop over batch
+        batch_preds = []
+        for i in range(X.shape[0]):
+            pred = model(X[i], A, A_c, n)
+            batch_preds.append(pred)
+
+        preds = torch.stack(batch_preds)  # (B, n, 3)
+        loss = criterion(preds, Y)
 
         optimizer.zero_grad()
-        pred = model(x)  # (n, 3)
-        loss = criterion(pred, y)
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
 
-    print(f"Epoch {epoch+1} - Train Loss: {total_loss:.4f}")
+        # Update tqdm description
+        pbar.set_postfix({"Batch Loss": loss.item()})
 
-    # Validation
-    model.eval()
-    val_loss = 0.0
-    with torch.no_grad():
-        for batch in tqdm(val_loader, desc=f"Epoch {epoch+1} [Val]"):
-            x, y = batch
-            x = x.squeeze(0).to(device)
-            y = y.squeeze(0).to(device)
-            pred = model(x)
-            val_loss += criterion(pred, y).item()
-    print(f"Epoch {epoch+1} - Val Loss: {val_loss:.4f}")
+    print(f"Epoch {epoch+1} completed — Avg Loss: {total_loss / len(train_loader):.4f}")
