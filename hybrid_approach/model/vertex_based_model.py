@@ -1,118 +1,145 @@
+# model/vertex_based_model.py
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-# --- 1. Graph MPNN Block using GIN ---
-class GINLayer(nn.Module):
-    def __init__(self, in_dim, out_dim):
-        super().__init__()
-        self.eps = nn.Parameter(torch.zeros(1))
-        self.mlp = nn.Sequential(
-            nn.Linear(in_dim, out_dim),
-            nn.ReLU(),
-            nn.Linear(out_dim, out_dim)
-        )
+# --- per-graph mean over nodes ---
+def segment_mean(X, batch_idx, num_groups):
+    sums = X.new_zeros(num_groups, X.size(1))
+    sums.index_add_(0, batch_idx, X)
+    counts = torch.bincount(batch_idx, minlength=num_groups).clamp_min(1).unsqueeze(1)
+    return sums / counts
 
-    def forward(self, x, edge_index, num_nodes):
-        row, col = edge_index  # edge_index shape: (2, E)
-        agg = torch.zeros_like(x)
-        agg.index_add_(0, row, x[col])
-        out = self.mlp((1 + self.eps) * x + agg)
+class MLP(nn.Module):
+    def __init__(self, d_in, d_hid, d_out, drop=0.0):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(d_in, d_hid), nn.ReLU(),
+            nn.Linear(d_hid, d_out),
+            nn.Dropout(drop),
+        )
+    def forward(self, x): return self.net(x)
+
+class LocalMPNN(nn.Module):
+    """
+    Edge-based (O(E)) message passing that works on concatenated batches.
+    X: (sumN, F), edge_index: (2, sumE) with edges src<-dst
+    """
+    def __init__(self, dim, eps=0.0):
+        super().__init__()
+        self.eps = nn.Parameter(torch.tensor(float(eps)))
+        self.lin = nn.Linear(dim, dim)
+        self.msg_lin = nn.Linear(dim, dim)
+
+    def forward(self, X, edge_index):
+        src, dst = edge_index  # (E,), (E,)
+        msg = self.msg_lin(X)[dst]               # (E, F)
+        agg = X.new_zeros(X.size(0), X.size(1))  # (sumN, F)
+        agg.index_add_(0, src, msg)
+        out = (1.0 + self.eps) * X + agg
+        out = self.lin(out)
+        return F.relu(out)
+
+class EdgeFlexibleAttention(nn.Module):
+    """
+    GRIT-style flexible attention, restricted to edges (O(E)).
+    """
+    def __init__(self, dim, attn_dim):
+        super().__init__()
+        self.Wq   = nn.Linear(dim, attn_dim, bias=False)
+        self.Wk   = nn.Linear(dim, attn_dim, bias=False)
+        self.Wphi = nn.Linear(attn_dim, 1, bias=False)
+        self.Wy   = nn.Linear(dim, dim)
+        self.We   = nn.Linear(attn_dim, dim)
+
+    def forward(self, X, edge_index):
+        N, Fdim = X.shape
+        src, dst = edge_index
+        q = self.Wq(X)[src]               # (E, d)
+        k = self.Wk(X)[dst]               # (E, d)
+        e = torch.tanh(q + k)             # (E, d)
+        scores = self.Wphi(e).squeeze(-1) # (E,)
+
+        scores = scores - scores.max()
+        exp_scores = torch.exp(scores)
+        denom = X.new_zeros(N)
+        denom.index_add_(0, src, exp_scores)
+        alpha = exp_scores / (denom[src] + 1e-9)
+
+        vy = self.Wy(X)[dst]              # (E, F)
+        ve = self.We(e)                   # (E, F)
+        msg = alpha.unsqueeze(-1) * (vy + ve)  # (E, F)
+
+        out = X.new_zeros(N, Fdim)
+        out.index_add_(0, src, msg)
         return out
 
-# --- 2. Dual-Path MPNN Positional Encoder (Eq 1-4) ---
-class DualMPNNEncoder(nn.Module):
-    def __init__(self, in_dim, hidden_dim):
+class GPSFlexBlock(nn.Module):
+    """
+    PreNorm(Local) + PreNorm(Attention) + PreNorm(FFN) with a per-graph global token.
+    Works with batched graphs via batch_idx.
+    """
+    def __init__(self, dim, attn_dim, mlp_ratio=2.0, drop=0.0):
         super().__init__()
-        self.mpnna = GINLayer(in_dim, hidden_dim)
-        self.mpnna_c = GINLayer(in_dim, hidden_dim)
-        self.theta_pe = nn.Parameter(torch.randn(1, hidden_dim * 2, 2))
+        hid = int(dim * mlp_ratio)
 
-    def forward(self, x, A_edges, Ac_edges, num_nodes):
-        h_A = self.mpnna(x, A_edges, num_nodes)     # Eq (1)
-        h_Ac = self.mpnna_c(x, Ac_edges, num_nodes) # Eq (2)
-        h = torch.cat([h_A, h_Ac], dim=-1)          # Eq (3)
+        self.norm1 = nn.LayerNorm(dim)
+        self.local = LocalMPNN(dim)
+        self.drop1 = nn.Dropout(drop)
 
-        pe = torch.tanh(h * self.theta_pe)          # Eq (4)
-        pe_sum = pe.sum(dim=-1)
-        x_0 = x + pe_sum
-        return x_0
+        self.norm2 = nn.LayerNorm(dim)
+        self.attn  = EdgeFlexibleAttention(dim, attn_dim)
+        self.drop2 = nn.Dropout(drop)
 
-# --- 3. Flexible Attention Block (Eq 8-10) ---
-class FlexibleAttention(nn.Module):
-    def __init__(self, dim):
+        self.norm3 = nn.LayerNorm(dim)
+        self.ffn   = MLP(dim, hid, dim, drop=drop)
+
+        self.g_token = nn.Parameter(torch.zeros(1, dim))
+        nn.init.xavier_uniform_(self.g_token)
+        self.Wg_in  = nn.Linear(dim, dim)
+        self.Wg_out = nn.Linear(dim, dim)
+
+    def forward(self, X, edge_index, batch_idx):
+        B = int(batch_idx.max()) + 1 if batch_idx.numel() > 0 else 1
+
+        # per-graph global context injection
+        g = self.g_token.expand(B, -1) + segment_mean(X, batch_idx, B)  # (B, D)
+        X = X + self.Wg_in(g)[batch_idx]
+
+        Y = self.local(self.norm1(X), edge_index)
+        X = X + self.drop1(Y)
+
+        Y = self.attn(self.norm2(X), edge_index)
+        X = X + self.drop2(Y)
+
+        Y = self.ffn(self.norm3(X))
+        X = X + Y
+
+        # (optional) update, not used further
+        _ = self.Wg_out(g + segment_mean(X, batch_idx, B))
+        return X
+
+class GPSFlexHybrid(nn.Module):
+    """
+    GPS-style + GRIT flexible attention (edge-based), batched.
+    Predicts node-level 3D displacement: (sumN, 3)
+    """
+    def __init__(self, in_dim, model_dim=64, attn_dim=32, depth=4, mlp_ratio=2.0, drop=0.0, out_dim=3):
         super().__init__()
-        self.W_Q = nn.Linear(dim, dim)
-        self.W_K = nn.Linear(dim, dim)
-        self.W_V = nn.Linear(dim, dim)
-        self.W_Ev = nn.Linear(dim, dim)
-        self.W_A = nn.Linear(dim, 1)
-
-    def forward(self, x):
-        Q = self.W_Q(x)
-        K = self.W_K(x)
-        V = self.W_V(x)
-        n = x.size(0)
-
-        Q_exp = Q.unsqueeze(1).expand(-1, n, -1)
-        K_exp = K.unsqueeze(0).expand(n, -1, -1)
-        edge_feat = torch.relu(Q_exp + K_exp)
-        e_ij = self.W_A(edge_feat).squeeze(-1)
-        alpha = F.softmax(e_ij, dim=1)
-
-        EV = self.W_Ev(edge_feat)
-        out = torch.bmm(alpha.unsqueeze(1), V.unsqueeze(0).expand(n, -1, -1) + EV)
-        return out.squeeze(1)
-
-# --- 4. Graph Information Layer (SE-like) ---
-class GraphInfoLayer(nn.Module):
-    def __init__(self, hidden_dim):
-        super().__init__()
-        self.lin1 = nn.Linear(hidden_dim, hidden_dim // 2)
-        self.lin2 = nn.Linear(hidden_dim // 2, hidden_dim)
-
-    def forward(self, x):
-        y_g0 = x.sum(dim=0, keepdim=True)
-        y_g1 = F.relu(self.lin1(y_g0))
-        y_g2 = torch.sigmoid(self.lin2(y_g1))
-        x_g = x * y_g2
-        return x_g
-
-# --- 5. Final MLP Head ---
-class OutputMLP(nn.Module):
-    def __init__(self, hidden_dim, out_dim):
-        super().__init__()
-        self.mlp = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, out_dim)
+        self.embed = nn.Linear(in_dim, model_dim)
+        self.blocks = nn.ModuleList([
+            GPSFlexBlock(model_dim, attn_dim, mlp_ratio=mlp_ratio, drop=drop)
+            for _ in range(depth)
+        ])
+        self.norm_out = nn.LayerNorm(model_dim)
+        self.head = nn.Sequential(
+            nn.Linear(model_dim, model_dim//2), nn.ReLU(),
+            nn.Linear(model_dim//2, out_dim)
         )
 
-    def forward(self, x):
-        return self.mlp(x)
-
-# --- 6. Full Vertex-based Hybrid Model ---
-class VertexHybridModel(nn.Module):
-    def __init__(self, in_dim, hidden_dim, out_dim):
-        super().__init__()
-        self.encoder = DualMPNNEncoder(in_dim, hidden_dim)
-        self.gin_A = GINLayer(hidden_dim, hidden_dim)
-        self.gin_Ac = GINLayer(hidden_dim, hidden_dim)
-        self.attn = FlexibleAttention(hidden_dim)
-        self.graph_info = GraphInfoLayer(hidden_dim)
-        self.out_head = OutputMLP(hidden_dim, out_dim)
-
-    def forward(self, x, A_edges, Ac_edges, num_nodes):
-        # Ensure correct edge format (2, E)
-        if A_edges.shape[0] != 2:
-            A_edges = A_edges.t()
-        if Ac_edges.shape[0] != 2:
-            Ac_edges = Ac_edges.t()
-
-        x0 = self.encoder(x, A_edges, Ac_edges, num_nodes)
-        hA = self.gin_A(x0, A_edges, num_nodes)
-        hAc = self.gin_Ac(x0, Ac_edges, num_nodes)
-        hAttn = self.attn(x0)
-        x_l = hA + hAc + hAttn
-        x_g = self.graph_info(x_l)
-        return self.out_head(x_g)
+    def forward(self, X, edge_index, batch_idx):
+        X = self.embed(X)                         # (sumN, D)
+        for blk in self.blocks:
+            X = blk(X, edge_index, batch_idx)     # (sumN, D)
+        X = self.norm_out(X)
+        return self.head(X)                       # (sumN, 3)

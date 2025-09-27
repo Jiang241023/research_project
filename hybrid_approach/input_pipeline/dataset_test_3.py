@@ -16,7 +16,7 @@ from torch.utils.data import DataLoader, random_split
 import torch
 import torch.nn as nn
 from tqdm import tqdm
-from model.vertex_based_model import SimpleGINModel
+from model.vertex_based_model import GPSFlexHybrid
 
 
 # set random seed
@@ -118,84 +118,117 @@ def prepare_sample(h5_path, component="blank", op_form=10, timestep=3):
     #print(f"one of node_displacement:\n {node_displacement[:1]}")
     return average_node_features, node_displacement
 
-# Wrap full dataset
-class FormingDisplacementDataset(Dataset):
-    def __init__(self, base_dataset):  # base_dataset = DDACSDataset(...)
-        self.base_dataset = base_dataset
+def edge_index_from_triangles(triangles: np.ndarray) -> torch.LongTensor:
+    """Undirected edges from triangles → edge_index (2, E)."""
+    edges = set()
+    for tri in triangles:
+        i, j, k = int(tri[0]), int(tri[1]), int(tri[2])
+        edges.update([(i, j), (j, i), (j, k), (k, j), (k, i), (i, k)])
+    if not edges:
+        return torch.zeros(2, 0, dtype=torch.long)
+    ei = torch.tensor(list(edges), dtype=torch.long).t().contiguous()  # (2, E)
+    return ei
+
+def subgraph_first_k(x, y, triangles, k):
+    N = x.shape[0]; k = min(int(k), int(N))
+    keep = np.arange(k)
+    mask = np.all(triangles < k, axis=1)
+    return x[:k], y[:k], triangles[mask]
+
+class FormingDisplacementDatasetGPS(Dataset):
+    def __init__(self, base_dataset, max_nodes=None):
+        self.base = base_dataset
+        self.max_nodes = max_nodes
 
     def __len__(self):
-        return len(self.base_dataset)
+        return len(self.base)
 
     def __getitem__(self, idx):
-        _, _, h5_path = self.base_dataset[idx]
-        x, y = prepare_sample(h5_path)  # from earlier
-        return torch.tensor(x, dtype=torch.float32), torch.tensor(y, dtype=torch.float32)
-    
-# Wrap full dataset
-full_dataset = FormingDisplacementDataset(dataset)
+        _, _, h5_path = self.base[idx]
+        x, y = prepare_sample(h5_path)                  # x:(N, F), y:(N, 3)
+        _, triangles = load_quad_mesh(h5_path)          # (T, 3)
+        if self.max_nodes is not None:
+            x, y, triangles = subgraph_first_k(x, y, triangles, self.max_nodes)
+        edge_index = edge_index_from_triangles(triangles)  # (2, E)
+        return {
+            "x": torch.tensor(x, dtype=torch.float32),         # (N, F)
+            "edge_index": edge_index,                          # (2, E) long
+            "y": torch.tensor(y, dtype=torch.float32),         # (N, 3)
+        }
 
-# Then split using random_split
-train_size = int(0.9 * len(full_dataset))
-val_size = len(full_dataset) - train_size
+def collate_graphs(batch):
+    """
+    batch: list of dicts {x:(Ni,F), edge_index:(2,Ei), y:(Ni,3)}
+    returns: X:(sumN,F), EI:(2,sumE), Y:(sumN,3), batch_idx:(sumN,)
+    """
+    Xs, Ys, EIs, B = [], [], [], []
+    offset = 0
+    for i, item in enumerate(batch):
+        x = item["x"]              # (Ni,F)
+        y = item["y"]              # (Ni,3)
+        ei = item["edge_index"]    # (2,Ei) long
 
+        Xs.append(x)
+        Ys.append(y)
+        EIs.append(ei + offset)    # offset node ids
+        B.append(torch.full((x.size(0),), i, dtype=torch.long))
+        offset += x.size(0)
+
+    X = torch.cat(Xs, dim=0)               # (sumN,F)
+    Y = torch.cat(Ys, dim=0)               # (sumN,3)
+    EI = torch.cat(EIs, dim=1).contiguous()# (2,sumE)
+    batch_idx = torch.cat(B, dim=0)        # (sumN,)
+    return {"x": X, "edge_index": EI, "y": Y, "batch_idx": batch_idx}
+
+# ---- build dataset/loaders ----
+full_dataset = FormingDisplacementDatasetGPS(dataset, max_nodes=1024)  # start with 512–2048 for safety
 train_frac, test_frac, eval_frac = 0.7, 0.2, 0.1
-
 train_dataset, test_dataset, eval_dataset = random_split(full_dataset, [train_frac, test_frac, eval_frac])
-
 print(len(train_dataset), len(test_dataset), len(eval_dataset))
 
-train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False)
-eval_loader = DataLoader(eval_dataset, batch_size=16, shuffle=False)
+train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True,  collate_fn=collate_graphs)
+eval_loader  = DataLoader(eval_dataset,  batch_size=8, shuffle=False,  collate_fn=collate_graphs)
+test_loader  = DataLoader(test_dataset,  batch_size=8, shuffle=False,  collate_fn=collate_graphs)
 
-# --- Define model parameters ---
-in_dim = 13         # input feature size per node
-hidden_dim = 4     # hidden layer size
-out_dim = 3         # output: (x, y, z) displacement
-
+# ---- model, loss, opt ----
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# --- Initialize Simple GIN Model ---
-model = SimpleGINModel(in_dim=in_dim, hidden_dim=hidden_dim, out_dim=out_dim).to(device)
-
-# --- Optimizer & Loss ---
+in_dim = 13
+model = GPSFlexHybrid(in_dim=in_dim, model_dim=64, attn_dim=32, depth=4, mlp_ratio=2.0, drop=0.0, out_dim=3).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 criterion = nn.MSELoss()
+num_epochs = 1
 
-# --- Dummy fully-connected edge list (for now) ---
-def create_dummy_edge_index(n):
-    row = torch.arange(n).repeat_interleave(n)
-    col = torch.arange(n).repeat(n)
-    edge_index = torch.stack([row, col], dim=0)
-    return edge_index.to(device)
-
-# --- Training loop ---
-for epoch in range(5):  # Change number of epochs as needed
+for epoch in range(num_epochs):
     model.train()
-    total_loss = 0.0
-
     pbar = tqdm(train_loader, desc=f"Epoch {epoch+1} [Train]", unit="batch")
-    for X, Y in pbar:
-        X, Y = X.to(device), Y.to(device)  # (B, N, 31), (B, N, 3)
-        batch_preds = []
-
-        for i in range(X.shape[0]):
-            x_i = X[i]  # (N, 31)
-            y_i = Y[i]  # (N, 3)
-            num_nodes = x_i.shape[0]
-
-            edge_index = create_dummy_edge_index(num_nodes)  # shape (2, N*N)
-            pred_i = model(x_i, edge_index)  # shape (N, 3)
-            batch_preds.append(pred_i)
-
-        preds = torch.stack(batch_preds)  # shape (B, N, 3)
-        loss = criterion(preds, Y)
+    run, totN = 0.0, 0
+    for batch in pbar:
+        X  = batch["x"].to(device)              # (sumN,F)
+        EI = batch["edge_index"].to(device)     # (2,sumE)
+        Y  = batch["y"].to(device)              # (sumN,3)
+        B  = batch["batch_idx"].to(device)      # (sumN,)
 
         optimizer.zero_grad()
+        Y_hat = model(X, EI, B)                 # (sumN,3)
+        loss = criterion(Y_hat, Y)
         loss.backward()
         optimizer.step()
-        total_loss += loss.item()
 
-        pbar.set_postfix({"Batch Loss": loss.item()})
+        run += loss.item() * X.size(0)
+        totN += X.size(0)
+        pbar.set_postfix({"loss": f"{loss.item():.4f}"})
+    print(f"Epoch {epoch}: Train Loss = {run/max(1,totN):.6f}")
 
-    print(f"Epoch {epoch+1} completed — Avg Loss: {total_loss / len(train_loader):.4f}")
+    model.eval()
+    vr, vN = 0.0, 0
+    with torch.no_grad():
+        for batch in tqdm(eval_loader, desc=f"Epoch {epoch} [Eval]", unit="batch"):
+            X  = batch["x"].to(device)
+            EI = batch["edge_index"].to(device)
+            Y  = batch["y"].to(device)
+            B  = batch["batch_idx"].to(device)
+            Y_hat = model(X, EI, B)
+            vr += criterion(Y_hat, Y).item() * X.size(0)
+            vN += X.size(0)
+    print(f"Epoch {epoch}: Val Loss = {vr/max(1,vN):.6f}")
