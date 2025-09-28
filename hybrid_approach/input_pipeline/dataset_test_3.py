@@ -181,7 +181,7 @@ def collate_graphs(batch):
     return {"x": X, "edge_index": EI, "y": Y, "batch_idx": batch_idx}
 
 # ---- build dataset/loaders ----
-full_dataset = FormingDisplacementDatasetGPS(dataset, max_nodes=1024)  # start with 512–2048 for safety
+full_dataset = FormingDisplacementDatasetGPS(dataset)  # start with 512–2048 for safety
 train_frac, test_frac, eval_frac = 0.7, 0.2, 0.1
 train_dataset, test_dataset, eval_dataset = random_split(full_dataset, [train_frac, test_frac, eval_frac])
 print(len(train_dataset), len(test_dataset), len(eval_dataset))
