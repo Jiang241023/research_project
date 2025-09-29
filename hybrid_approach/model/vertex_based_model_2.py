@@ -92,7 +92,7 @@ class DualMPNNLayer(nn.Module):
 # --------------------------------------------
 def _rho_signed_sqrt(x):
     # ρ(x) = sqrt(ReLU(x)) − sqrt(ReLU(−x))
-    return torch.sqrt(torch.relu(x) + 1e-8) - torch.sqrt(torch.relu(-x) + 1e-8)
+    return torch.sqrt(torch.nn.ReLU(x) + 1e-8) - torch.sqrt(torch.nn.ReLU(-x) + 1e-8)
 
 class FlexibleAttention(nn.Module):
     """
