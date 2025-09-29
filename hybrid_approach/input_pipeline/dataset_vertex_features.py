@@ -16,7 +16,8 @@ from torch.utils.data import DataLoader, random_split
 import torch
 import torch.nn as nn
 from tqdm import tqdm
-
+import time
+from collections import defaultdict
 
 # set random seed
 torch.manual_seed(0)
@@ -146,10 +147,33 @@ train_dataset, test_dataset, eval_dataset = random_split(full_dataset, [train_fr
 new_concatenated_features, node_displacement = train_dataset[0]
 print(f"new_concatenated_features of nodes: {new_concatenated_features[0]}") # x,y,z + other features 
 
-print(f"node_displacement: {node_displacement[0]}")
+print(f"node_displacement: {node_displacement[0]}") 
 
 print(len(train_dataset), len(test_dataset), len(eval_dataset))
 
 train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False)
 eval_loader = DataLoader(eval_dataset, batch_size=16, shuffle=False)
+
+import time as _time
+def now():
+    return _time.perf_counter()
+
+def time_whole_dataset(ddacs):
+    total_nodes = 0
+    t0 = _time.perf_counter()
+    for i in tqdm(range(len(ddacs)), desc="Timing whole dataset"):
+        _, _, h5_path = ddacs[i]
+        X, Y = prepare_sample(h5_path)   # triggers all I/O + compute
+        total_nodes += X.shape[0]
+    t1 = _time.perf_counter()
+
+    elapsed = t1 - t0
+    sims = len(ddacs)
+    print("\n=== Whole-dataset timing ===")
+    print(f"Total time: {elapsed:.2f} s for {sims} sims")
+    print(f"Avg per sim: {elapsed/sims*1000:.1f} ms/sim")
+    print(f"Total nodes: {total_nodes:,}  →  {total_nodes/elapsed:,.0f} nodes/s")
+
+# run it
+time_whole_dataset(dataset)
