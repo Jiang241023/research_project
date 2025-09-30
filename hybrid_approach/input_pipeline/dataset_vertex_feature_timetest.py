@@ -1,294 +1,187 @@
-import os, sys
 import numpy as np
+import matplotlib.pyplot as plt
 import h5py
-import torch
 from pathlib import Path
-from collections import defaultdict, OrderedDict
-from torch.utils.data import Dataset, DataLoader, random_split
-from tqdm import tqdm
-import csv
-
-# ---------------------------------------------------------------------
-# Project imports
-# ---------------------------------------------------------------------
+import os, sys
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if ROOT not in sys.path:
     sys.path.append(ROOT)
-
 from DDACSDataset import DDACSDataset
-from utils.utils_DDACS import (
-    extract_mesh,
-    extract_element_thickness,
-    extract_point_springback,
-)
+from utils.utils_DDACS import  extract_mesh, extract_element_thickness, extract_point_springback
+from torch.utils.data import Dataset
+from torch.utils.data import DataLoader, random_split
+import torch
+import torch.nn as nn
+from tqdm import tqdm
+import time
+from collections import defaultdict
+from pathlib import Path
 
-# ---------------------------------------------------------------------
-# Reproducibility
-# ---------------------------------------------------------------------
+
+# set random seed
 torch.manual_seed(0)
 
-# ---------------------------------------------------------------------
-# Data root & base dataset
-# ---------------------------------------------------------------------
+# Setup data directory
 data_dir = Path("/mnt/data/darus/")
+
+# Load dataset
 dataset = DDACSDataset(data_dir, "h5")
-N_TOTAL = len(dataset)
-print(f"Loaded {N_TOTAL} simulations")
+print(f"Loaded {len(dataset)} simulations")
 
-# ---------------------------------------------------------------------
-# Timing helpers (no shadowing)
-# ---------------------------------------------------------------------
-import time as _time
-
-def now():
-    return _time.perf_counter()
-
-class SectionTimer:
-    def __init__(self):
-        self.t = defaultdict(float)
-    def add(self, key, dt):
-        self.t[key] += dt
-    def to_ordered(self):
-        # Stable, nice order for CSV
-        keys = [
-            # IO first
-            "io:read_strain",
-            "io:extract_thickness",
-            "io:extract_mesh",
-            "io:extract_springback",
-            # compute next
-            "compute:reshape_strain",
-            "compute:concat_elem_feats",
-            "compute:repeat_elem_feats",
-            "compute:astype_mesh",
-            "compute:astype_disp",
-            "compute:project_elem_to_nodes",
-            "compute:concat_coords_features",
-            # totals (per sub-function)
-            "total:load_element_features",
-            "total:load_quad_mesh",
-            "total:load_displacement",
-            # end-to-end optional
-            "total:prepare_sample",
-        ]
-        od = OrderedDict()
-        for k in keys:
-            if k in self.t:
-                od[k] = self.t[k]
-        # include any extra, unexpected keys
-        for k in sorted(self.t.keys()):
-            if k not in od:
-                od[k] = self.t[k]
-        return od
-
-# ---------------------------------------------------------------------
-# Feature loaders (timed variants)
-# ---------------------------------------------------------------------
-def load_element_features_timed(h5_path, component="blank", timestep=3, op_form=10, t:SectionTimer=None):
-    t0 = now()
+# Get concatenated_strainstressthickness_features
+def load_element_features(h5_path, component="blank", timestep=3, op_form=10):
     with h5py.File(h5_path, "r") as f:
         comp = f[f"OP{op_form}"][component]
-        t1 = now()
-        strain_t = comp["element_shell_strain"][timestep]  # (m, 2, 6)
-        t2 = now()
-    if t: t.add("io:read_strain", t2 - t1)
+        stress_t = comp["element_shell_stress"][timestep]  # (m,3,6)
+        strain_t = comp["element_shell_strain"][timestep]  # (m,2,6)
 
-    t3 = now()
-    strain_features = strain_t.reshape(strain_t.shape[0], -1).astype(np.float32)  # (m, 12)
-    t4 = now()
-    if t: t.add("compute:reshape_strain", t4 - t3)
+    concatenated_strainstress_features = np.concatenate([stress_t.reshape(stress_t.shape[0], -1).astype(np.float32),  # 18
+                                                        strain_t.reshape(strain_t.shape[0], -1).astype(np.float32),  # 12
+                                                        ], axis=1)  # (m,30)
+    #strain_features = strain_t.reshape(strain_t.shape[0], -1).astype(np.float32)  # (m, 12)
 
-    t5 = now()
-    thickness = extract_element_thickness(h5_path, timestep=timestep, operation=op_form).astype(np.float32)
-    t6 = now()
-    if t: t.add("io:extract_thickness", t6 - t5)
+    thickness = extract_element_thickness(h5_path, timestep=timestep, operation=op_form).astype(np.float32)  
+    concatenated_features = np.concatenate([concatenated_strainstress_features, thickness[:, None]], axis=1)  
+    return concatenated_features  # (m,31)
 
-    t7 = now()
-    concatenated = np.concatenate([strain_features, thickness[:, None]], axis=1)  # (m, 13)
-    t8 = now()
-    if t: t.add("compute:concat_elem_feats", t8 - t7)
-    if t: t.add("total:load_element_features", t8 - t0)
-    return concatenated
+# Get quad mesh
+def load_quad_mesh(h5_path, component="blank", op_form=10, timestep = 3):
+    node_coords, triangles = extract_mesh(h5_path, operation=op_form, component=component, timestep = timestep)
+    #print(f"the shape of triangles:\n {triangles.shape}") # (22050, 3)
+    #print(f"first ten elements of triangles:\n {triangles[:10]}")
+    #print(f"the dtype of triangles:\n {triangles.dtype}")
+    return node_coords.astype(np.float32), triangles.astype(np.int64)
 
-def load_quad_mesh_timed(h5_path, component="blank", op_form=10, timestep=3, t:SectionTimer=None):
-    t0 = now()
-    node_coords, triangles = extract_mesh(h5_path, operation=op_form, component=component, timestep=timestep)
-    t1 = now()
-    if t: t.add("io:extract_mesh", t1 - t0)
-
-    t2 = now()
-    node_coords = node_coords.astype(np.float32)
-    triangles = triangles.astype(np.int64)
-    t3 = now()
-    if t: t.add("compute:astype_mesh", t3 - t2)
-    if t: t.add("total:load_quad_mesh", t3 - t0)
-    return node_coords, triangles
-
-def load_displacement_op10_timed(h5_path, t:SectionTimer=None):
-    t0 = now()
-    _, disp = extract_point_springback(h5_path, operation=10)
-    t1 = now()
-    if t: t.add("io:extract_springback", t1 - t0)
-
-    t2 = now()
-    disp = disp.astype(np.float32)
-    t3 = now()
-    if t: t.add("compute:astype_disp", t3 - t2)
-    if t: t.add("total:load_displacement", t3 - t1 + (t1 - t0))  # equal to (t3 - t0)
-    return disp
-
-# ---------------------------------------------------------------------
-# Element→node projection (timed)
-# ---------------------------------------------------------------------
-def element_to_node_features_timed(num_nodes, triangles, elem_features, t:SectionTimer=None):
-    t0 = now()
-    F = elem_features.shape[1]
-    node_feature_sums = np.zeros((num_nodes, F), dtype=np.float32)
+# Project element features to node features
+def element_to_node_features(num_nodes, triangles, elem_features):
+    node_feature_sums = np.zeros((num_nodes, elem_features.shape[1]), dtype=np.float32)
+    #print(f"the shape of node_feature_sums:\n {node_feature_sums.shape}") #(11236, 31)
     node_counts = np.zeros(num_nodes, dtype=np.int32)
-    for tri_idx in range(len(triangles)):
-        feat = elem_features[tri_idx]        # (F,)
-        tri_nodes = triangles[tri_idx]       # (3,)
-        for n in tri_nodes:
-            node_feature_sums[n] += feat
-            node_counts[n] += 1
-    avg = node_feature_sums / np.maximum(node_counts[:, None], 1)
-    t1 = now()
-    if t: t.add("compute:project_elem_to_nodes", t1 - t0)
-    return avg
+    #print(f"the shape of node_counts:\n {node_counts.shape}")  #(11236,)
 
-# ---------------------------------------------------------------------
-# Timed sample preparation
-# ---------------------------------------------------------------------
-def prepare_sample_timed(h5_path, component="blank", op_form=10, timestep=3):
-    T = SectionTimer()
-    t_start = now()
+    # Loop over each element
+    for triangle_index in range(len(triangles)):
+        triangle_feature = elem_features[triangle_index]    # (31,)
+        triangle_nodes = triangles[triangle_index]           #  (3,)
+        #print(f"the shape of triangle_nodes:\n {triangle_nodes.shape}")
 
-    elem_feats = load_element_features_timed(h5_path, component, timestep, op_form, T)  # (m, 13)
+        # Give this triangle's feature to each of its 3 nodes
+        for node_index in triangle_nodes:
+            # Accumulate the feature into the node's total
+            node_feature_sums[node_index] += triangle_feature 
+            #print(f"the shape of node_feature_sums:\n {node_feature_sums.shape}")
 
-    t0 = now()
-    repeated_elem_feats = np.repeat(elem_feats, 2, axis=0)                               # (~2m, 13)
-    t1 = now()
-    T.add("compute:repeat_elem_feats", t1 - t0)
+            # Keep track of how many triangles this node belongs to
+            node_counts[node_index] += 1
+            #print(f"node_counts:\n {node_counts}")
+    #print(f"node_feature_sums: {node_counts[:10]}")
+    #print(f"the dtype of node_feature_sums: {node_feature_sums.dtype}")
+    #print(f"node_counts: {node_counts[:10]}")
 
-    node_coords, triangles = load_quad_mesh_timed(h5_path, component, op_form, timestep, T)
-    raw_disp = load_displacement_op10_timed(h5_path, T)
-    N = raw_disp.shape[0]
+    average_node_features = node_feature_sums / np.maximum(node_counts[:, None], 1)  # (11236, 31), the shape of node_counts[:, None] becomes (n, 1)
+    #print(f"average_features: {average_node_features[:2]}")
+    #print(f"the shape of average_features: {average_node_features.shape}")
 
-    avg_node_feats = element_to_node_features_timed(N, triangles, repeated_elem_feats, T)
+    return average_node_features
 
-    t2 = now()
-    x = np.concatenate([node_coords.astype(np.float32), avg_node_feats], axis=1)  # [N, 16]
-    y = raw_disp[:N]                                                              # [N, 3]
-    t3 = now()
-    T.add("compute:concat_coords_features", t3 - t2)
+def load_displacement_op10(h5_path):
+    _, displacement_vectors = extract_point_springback(h5_path, operation=10)  # OP10
+    #print(f"the shape of displacement_vectors:\n {displacement_vectors.shape}")
+    return displacement_vectors.astype(np.float32)  #  (11236, 3)
 
-    T.add("total:prepare_sample", now() - t_start)
-    return x, y, T
+def prepare_sample(h5_path, component="blank", op_form=10, timestep=3):
+    # Load per-element strain/stress/thickness features (11025, 31)
+    concatenated_features = load_element_features(h5_path, component, timestep, op_form)  # (11025, 31)
 
-# ---------------------------------------------------------------------
-# Iterate WHOLE dataset, save CSV, print aggregates
-# ---------------------------------------------------------------------
-def run_full_benchmark(ddacs: DDACSDataset, csv_path="timings_full_dataset.csv", warmup=3):
-    """
-    ddacs: the base DDACSDataset (iterable, yields (sim_id, meta, h5_path))
-    warmup: number of initial samples to ignore in aggregation (to reduce cache/first-open effects)
-    """
-    # Prepare CSV header
-    header = [
-        "index", "sim_id", "num_nodes", "num_elems_tri", "X_shape0", "X_shape1",
-        # section keys will be appended dynamically
-    ]
-    # We'll create a union of keys encountered to keep columns consistent
-    union_keys = OrderedDict()
+    # Repeat to match number of triangle elements (22050)
+    # similar to thickness_per_triangle = np.repeat(thickness, 2)[:len(triangles)]
+    repeated_elem_feats = np.repeat(concatenated_features, 2, axis=0)  # (22050, 31), axis=0 along the rows axis.
+    #print(f"the shape of repeated_elem_feats:\n {repeated_elem_feats.shape}") 
 
-    # First pass to collect keys AND write lines progressively
-    rows = []
-    errors = 0
+    # Load mesh triangles
+    node_coords, triangles = load_quad_mesh(h5_path, component, op_form, timestep)  # triangles: (22050, 3)
 
-    for i in tqdm(range(len(ddacs)), desc="Timing all sims"):
-        try:
-            sim_id, _, h5_path = ddacs[i]
-            # Run timed prep
-            x, y, T = prepare_sample_timed(h5_path)
-            N = x.shape[0]
-            # triangles count equals ~2*m; but we don't have m here without re-opening; approximate via projection inputs:
-            # We'll infer triangle count from degree averages later if needed. For now omit or put -1.
-            row = {
-                "index": i,
-                "sim_id": sim_id,
-                "num_nodes": int(N),
-                "num_elems_tri": -1,
-                "X_shape0": int(x.shape[0]),
-                "X_shape1": int(x.shape[1]),
-            }
-            od = T.to_ordered()
-            for k, v in od.items():
-                row[k] = v
-                union_keys[k] = True
-            rows.append(row)
-        except Exception as e:
-            errors += 1
-            # Keep going; log minimal info
-            rows.append({
-                "index": i, "sim_id": None, "num_nodes": -1, "num_elems_tri": -1,
-                "X_shape0": -1, "X_shape1": -1, "error": str(e)
-            })
-            union_keys["error"] = True
-            continue
+    # # Safety version (keep if needed later)
+    # valid_mask = np.all(triangles < raw_displacement.shape[0], axis=1)
+    # triangles = triangles[valid_mask]
+    # repeated_elem_feats = repeated_elem_feats[valid_mask]
 
-    # Compose final header with sections
-    header_extended = header + list(union_keys.keys())
+    # Load displacement 
+    raw_displacement = load_displacement_op10(h5_path)  # (11236, 3)
+    num_nodes = raw_displacement.shape[0] # num_nodes: 11236
+    #print(f"num_nodes: {num_nodes}")
+    
+    average_node_features = element_to_node_features(num_nodes, triangles, repeated_elem_feats) # (11236, 31)
+    new_concatenated_features = np.concatenate([node_coords, average_node_features], axis=1)
+    #print(f"the shape of node_feats:\n {node_feats.shape}")
+    node_displacement = raw_displacement[:num_nodes] # (11236, 3)
+    #print(f"the shape of node_displacement:\n {node_displacement.shape}")
+    #print(f"one of node_displacement:\n {node_displacement[:1]}")
+    return new_concatenated_features, node_displacement
 
-    # Write CSV
-    with open(csv_path, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=header_extended)
-        w.writeheader()
-        for r in rows:
-            w.writerow(r)
+# Wrap full dataset
+class FormingDisplacementDataset(Dataset):
+    def __init__(self, base_dataset):  # base_dataset = DDACSDataset(...)
+        self.base_dataset = base_dataset
 
-    # Aggregates (skip warmup and errors)
-    agg = defaultdict(float)
-    count_ok = 0
-    for r in rows[warmup:]:
-        if "error" in r and r["error"]:
-            continue
-        for k in union_keys.keys():
-            if k.startswith("io:") or k.startswith("compute:") or k.startswith("total:"):
-                v = r.get(k, 0.0)
-                if isinstance(v, (int, float)):
-                    agg[k] += float(v)
-        count_ok += 1
+    def __len__(self):
+        return len(self.base_dataset)
 
-    print(f"\nFinished. CSV saved to: {csv_path}")
-    print(f"Successful samples: {count_ok}/{len(ddacs)}; errors: {errors}")
+    def __getitem__(self, idx):
+        _, _, h5_path = self.base_dataset[idx]
+        x, y = prepare_sample(h5_path)  # from earlier
+        return torch.tensor(x, dtype=torch.float32), torch.tensor(y, dtype=torch.float32)
+    
+# # Wrap full dataset
+# full_dataset = FormingDisplacementDataset(dataset)
 
-    if count_ok == 0:
-        return
+# # Then split using random_split
+# train_size = int(0.9 * len(full_dataset))
+# val_size = len(full_dataset) - train_size
 
-    avg = {k: agg[k] / count_ok for k in agg.keys()}
-    io_total_avg = sum(v for k, v in avg.items() if k.startswith("io:"))
-    compute_total_avg = sum(v for k, v in avg.items() if k.startswith("compute:"))
-    end_to_end_avg = avg.get("total:prepare_sample", io_total_avg + compute_total_avg)
+# train_frac, test_frac, eval_frac = 0.7, 0.2, 0.1
 
-    print("\n=== Averages over full dataset (excluding warmup & errors) ===")
-    print(f"io_total_avg:       {io_total_avg*1000:8.2f} ms  ({io_total_avg/(end_to_end_avg+1e-12):6.2%} of total)")
-    print(f"compute_total_avg:  {compute_total_avg*1000:8.2f} ms  ({compute_total_avg/(end_to_end_avg+1e-12):6.2%} of total)")
-    print(f"end_to_end_avg:     {end_to_end_avg*1000:8.2f} ms")
+# train_dataset, test_dataset, eval_dataset = random_split(full_dataset, [train_frac, test_frac, eval_frac])
 
-    print("\n--- Top section averages (ms) ---")
-    for k in sorted(avg.keys()):
-        print(f"{k:35s} {avg[k]*1000:8.2f}")
+# new_concatenated_features, node_displacement = train_dataset[0]
+# print(f"new_concatenated_features of nodes: {new_concatenated_features[0]}") # x,y,z + other features 
 
-# ---------------------------------------------------------------------
-# Run full benchmark
-# ---------------------------------------------------------------------
-if __name__ == "__main__":
-    # Optional: quick warm cache
-    try:
-        for j in range(3):
-            _, _, p = dataset[j]
-            _ = prepare_sample_timed(p)
-    except Exception:
-        pass
+# print(f"node_displacement: {node_displacement[0]}") 
 
-    run_full_benchmark(dataset, csv_path="timings_full_dataset.csv", warmup=3)
+# print(len(train_dataset), len(test_dataset), len(eval_dataset))
+
+# train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
+# test_loader = DataLoader(test_dataset, batch_size=8, shuffle=False)
+# eval_loader = DataLoader(eval_dataset, batch_size=8, shuffle=False)
+
+OUT_DIR = Path("/home/RUS_CIP/st186731/research_project/features")
+OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+def save_all_features_h5_per_sim(ddacs, out_dir=OUT_DIR, overwrite=False):
+    n = len(ddacs)
+    t0 = time.perf_counter()
+
+    for i in tqdm(range(n), desc="Saving features (HDF5 per sample)"):
+    
+        sample_id, _, h5_path = ddacs[i]
+        out_file = out_dir / f"{sample_id}.h5"
+        X, Y = prepare_sample(h5_path)
+        X = X.astype(np.float32, copy=False)
+        print(f"new_concatenated_features of nodes: {X}")
+        Y = Y.astype(np.float32, copy=False)
+
+        with h5py.File(out_file, "w") as f:
+            # Compression + shuffle + chunking → smaller & faster I/O
+            f.create_dataset("X", data=X, compression="gzip", compression_opts=4,
+                                shuffle=False)
+            f.create_dataset("Y", data=Y, compression="gzip", compression_opts=4,
+                                shuffle=False)
+            f.attrs["sample_id"] = int(sample_id)
+
+    elapsed = time.perf_counter() - t0
+    print("\n=== Save summary ===")
+    print(f"dir: {out_dir}")
+    print(f"total time: {elapsed:.2f} s ")
+
+# Run it
+save_all_features_h5_per_sim(dataset, OUT_DIR, overwrite=False)

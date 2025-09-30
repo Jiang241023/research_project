@@ -33,16 +33,16 @@ print(f"Loaded {len(dataset)} simulations")
 def load_element_features(h5_path, component="blank", timestep=3, op_form=10):
     with h5py.File(h5_path, "r") as f:
         comp = f[f"OP{op_form}"][component]
-        #stress_t = comp["element_shell_stress"][timestep]  # (m,3,6)
+        stress_t = comp["element_shell_stress"][timestep]  # (m,3,6)
         strain_t = comp["element_shell_strain"][timestep]  # (m,2,6)
 
-    # concatenated_strainstress_features = np.concatenate([stress_t.reshape(stress_t.shape[0], -1).astype(np.float32),  # 18
-    #                                                     strain_t.reshape(strain_t.shape[0], -1).astype(np.float32),  # 12
-    #                                                     ], axis=1)  # (m,30)
-    strain_features = strain_t.reshape(strain_t.shape[0], -1).astype(np.float32)  # (m, 12)
+    concatenated_strainstress_features = np.concatenate([stress_t.reshape(stress_t.shape[0], -1).astype(np.float32),  # 18
+                                                        strain_t.reshape(strain_t.shape[0], -1).astype(np.float32),  # 12
+                                                        ], axis=1)  # (m,30)
+    #strain_features = strain_t.reshape(strain_t.shape[0], -1).astype(np.float32)  # (m, 12)
 
     thickness = extract_element_thickness(h5_path, timestep=timestep, operation=op_form).astype(np.float32)  
-    concatenated_features = np.concatenate([strain_features, thickness[:, None]], axis=1)  
+    concatenated_features = np.concatenate([concatenated_strainstress_features, thickness[:, None]], axis=1)  
     return concatenated_features  # (m,31)
 
 # Get quad mesh
@@ -176,4 +176,4 @@ def time_whole_dataset(ddacs):
     print(f"Total nodes: {total_nodes:,}  →  {total_nodes/elapsed:,.0f} nodes/s")
 
 # run it
-time_whole_dataset(dataset)
+time_whole_dataset(full_dataset)
