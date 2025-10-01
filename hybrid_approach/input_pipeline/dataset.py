@@ -5,9 +5,10 @@ import pandas as pd
 from pathlib import Path
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from matplotlib import ticker
-import sys
-sys.path.append("../research_project/edge_based_hybrid_approach")
-
+import os, sys
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if ROOT not in sys.path:
+    sys.path.append(ROOT)
 from DDACSDataset import DDACSDataset
 from utils.utils_DDACS import extract_point_cloud, extract_mesh, display_structure, extract_element_thickness, extract_point_springback
 
