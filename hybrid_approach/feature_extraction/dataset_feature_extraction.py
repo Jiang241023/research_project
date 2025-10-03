@@ -5,8 +5,8 @@ import os, sys
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if ROOT not in sys.path:
     sys.path.append(ROOT)
-from input_pipeline.DDACSDataset import DDACSDataset
-from utils.utils_DDACS import  extract_mesh, extract_element_thickness, extract_point_springback
+from DDACSDataset import DDACSDataset
+from utils_DDACS import  extract_mesh, extract_element_thickness, extract_point_springback, extract_point_cloud
 import torch
 from tqdm import tqdm
 import time
@@ -18,14 +18,18 @@ def load_element_features(h5_path, component="blank", timestep=3, op_form=10):
         comp = f[f"OP{op_form}"][component]
         stress_t = comp["element_shell_stress"][timestep]  # (m,3,6)
         strain_t = comp["element_shell_strain"][timestep]  # (m,2,6)
+        thickness_t = comp["element_shell_thickness"][timestep]  # (m,1)
+        
+    concatenated_features = np.concatenate([stress_t.reshape(stress_t.shape[0], -1).astype(np.float32),  # 18
+                                            strain_t.reshape(strain_t.shape[0], -1).astype(np.float32),  # 12
+                                            thickness_t.reshape(thickness_t.shape[0], -1).astype(np.float32) # 1
+                                            ], axis=1)  # (m,31)
+    #print(f"the shape of concatenated_features:\n {concatenated_features.shape}")
 
-    concatenated_strainstress_features = np.concatenate([stress_t.reshape(stress_t.shape[0], -1).astype(np.float32),  # 18
-                                                        strain_t.reshape(strain_t.shape[0], -1).astype(np.float32),  # 12
-                                                        ], axis=1)  # (m,30)
     #strain_features = strain_t.reshape(strain_t.shape[0], -1).astype(np.float32)  # (m, 12)
+    #thickness = extract_element_thickness(h5_path, timestep=timestep, operation=op_form).astype(np.float32)  
+    #concatenated_features = np.concatenate([concatenated_strainstress_features, thickness[:, None]], axis=1)  
 
-    thickness = extract_element_thickness(h5_path, timestep=timestep, operation=op_form).astype(np.float32)  
-    concatenated_features = np.concatenate([concatenated_strainstress_features, thickness[:, None]], axis=1)  
     return concatenated_features  # (m,31)
 
 # Get quad mesh
@@ -162,6 +166,7 @@ def prepare_sample(h5_path, component="blank", op_form=10, timestep=3):
     # 3) node-level displacement (OP10)
     raw_displacement = load_displacement_op10(h5_path)                                     # (N, 3)
     num_nodes = raw_displacement.shape[0]
+    node_index = np.arange(num_nodes, dtype=np.int64) 
 
     # 4) node features: avg triangle features → nodes, then concat with coords
     average_node_features = element_to_node_features(num_nodes, triangles, repeated_elem_feats)  # (N, 31)
@@ -169,13 +174,15 @@ def prepare_sample(h5_path, component="blank", op_form=10, timestep=3):
     node_displacement = raw_displacement[:num_nodes].astype(np.float32)                          # (N, 3)
 
     # 5) EDGE INDEX + EDGE FEATURES (no degrees needed)
-    edge_index, edge2tris = build_edges_from_triangles(triangles)                                  # (E,2), list-of-lists
-    edge_features = compute_edge_features(edge_index, edge2tris, repeated_elem_feats)              # (E,31)
+    # edge_index, edge2tris = build_edges_from_triangles(triangles)                                  # (E,2), list-of-lists
+    # edge_features = compute_edge_features(edge_index, edge2tris, repeated_elem_feats)              # (E,31)
 
     return (new_concatenated_features.astype(np.float32),
             node_displacement,
-            edge_index.astype(np.int64),
-            edge_features.astype(np.float32))
+            # edge_index.astype(np.int64),
+            # edge_features.astype(np.float32),
+            node_coords,
+            node_index)
 
 # set random seed
 torch.manual_seed(0)
@@ -188,52 +195,64 @@ dataset = DDACSDataset(data_dir, "h5")
 print(f"Loaded {len(dataset)} simulations")
 
 # Add the save path
-OUT_DIR = Path("/home/RUS_CIP/st186731/research_project/features")
+OUT_DIR = Path("/mnt/data/jiang")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Save or check samples
-def features_h5_per_sample(ddacs, out_dir, save_or_check):
-    if save_or_check == "save":
+def features_per_sample(ddacs, out_dir: Path, action="save_npy"):
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    if action == "save_npy":
         n = len(ddacs)
         t0 = time.perf_counter()
-
-        for i in tqdm(range(n), desc="Saving features (HDF5 per sample)"):
+        for i in tqdm(range(n), desc="Saving features (NPY per array)"):
             sample_id, _, h5_path = ddacs[i]
-            out_file = out_dir / f"{sample_id}.h5"
 
-            X, Y, edge_index, edge_features = prepare_sample(h5_path)
-            X = X.astype(np.float32)                 # (N,34)
-            Y = Y.astype(np.float32)                 # (N,3)
-            EI = edge_index.astype(np.int64)         # (E,2)
-            EF = edge_features.astype(np.float32)    # (E,31)
+            # your existing extractor
+            # new_concatenated_features, node_displacement, edge_index, edge_features, node_coordinates, node_index = prepare_sample(h5_path)
+            new_concatenated_features, node_displacement, node_coordinates, node_index = prepare_sample(h5_path)
+            # cast dtypes explicitly
+            # X  = new_concatenated_features.astype(np.float32)    # (N, 34)
+            # Y  = node_displacement.astype(np.float32)    # (N, 3)
+            # EI = edge_index.astype(np.int64)      # (E, 2)
+            # EF = edge_features.astype(np.float32) # (E, 31)
+            # node_coords = node_coordinates.astype(np.float32) 
+            node_index = node_index.astype(np.int64)
 
-            with h5py.File(out_file, "w") as f:
-                f.create_dataset("new_concatenated_features", data=X)
-                f.create_dataset("node_displacement", data=Y)
-                f.create_dataset("edge_index", data=EI)
-                f.create_dataset("edge_features", data=EF)
-                f.attrs["sample_id"] = int(sample_id)
+            # save 5 arrays as separate .npy files
+            # np.save(out_dir / f"{sample_id}_new_concatenated_features.npy",  X)
+            # np.save(out_dir / f"{sample_id}_node_displacement.npy",  Y)
+            # np.save(out_dir / f"{sample_id}_edge_index.npy", EI)
+            # np.save(out_dir / f"{sample_id}_edge_features.npy", EF)
+            # np.save(out_dir / f"{sample_id}_node_coords.npy", node_coords)
+            np.save(out_dir / f"{sample_id}_node_index.npy", node_index)
 
         total_time = time.perf_counter() - t0
         print("\n=== Save summary ===")
         print(f"dir: {out_dir}")
-        print(f"total time: {total_time:.2f} s ")
+        print("format: NPY (one file per array)")
+        print(f"total time: {total_time:.2f} s")
 
-    elif save_or_check == "check":
-        out_file = out_dir / f"16039.h5"
-        with h5py.File(out_file, "r") as f:
-            X  = f["new_concatenated_features"][:]   # (N, 34)
-            Y  = f["node_displacement"][:]           # (N, 3)
-            EI = f["edge_index"][:]                  # (E, 2)
-            EF = f["edge_features"][:]               # (E, 31)
-            sid = f.attrs["sample_id"]
-            print(f"For sample {sid}:\n"
-                  f"  new_concatenated_features[0] = {X[0]}\n"
-                  f"  node_displacement[0] = {Y[0]}\n"
-                  f"  edge_index[0] = {EI[0]}\n"
-                  f"  edge_features[0] = {EF[0]}")
+    elif action == "check_npy":
+        sample_to_check = "16039"  # change to any ID you saved
+        # X  = np.load(out_dir / f"{sample_to_check}_new_concatenated_features.npy")
+        # Y  = np.load(out_dir / f"{sample_to_check}_node_displacement.npy")
+        # EI = np.load(out_dir / f"{sample_to_check}_edge_index.npy")
+        # EF = np.load(out_dir / f"{sample_to_check}_edge_features.npy")
+        # node_coords = np.load(out_dir / f"{sample_to_check}_node_coords.npy")
+        node_index = np.load(out_dir / f"{sample_to_check}_node_index.npy")
+        print("-----------------------------------")
+        print(f"For sample {sample_to_check} (NPY set):")
+        print("-----------------------------------")
+        # print(f"new_concatenated_features[0]:\n{X[0]}")
+        # print(f"node_displacement[0]:\n{Y[0]}")
+        # print(f"edge_index[0]: {EI[0]}")
+        # print(f"edge_features[0]:\n{EF[0]}")
+        # print(f"node_coords[0]:\n{node_coords[0]}")
+        print(f"node_index[0]:\n{node_index[0]}")        
+
     else:
-        print(r"U should choose save or check")
+        print("action must be one of: 'save_npy', 'check_npy'")
 
 # Run it
-features_h5_per_sample(dataset, OUT_DIR, save_or_check = "check")
+features_per_sample(dataset, OUT_DIR, action="save_npy")
