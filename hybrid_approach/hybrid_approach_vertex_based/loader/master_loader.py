@@ -72,21 +72,24 @@ def load_dataset_master(format, name, dataset_dir):
                 max_samples=getattr(cfg.dataset, 'max_samples', None),
                 debug=getattr(cfg, 'debug', False),
             )
-            # Precreate graph-wise splits (70/20/10 by default) for streaming
-            if not hasattr(dataset, 'split_idxs') and hasattr(dataset, 'get_idx_split'):
-                s_dict = dataset.get_idx_split(seed=cfg.seed)
-                dataset.split_idxs = [s_dict[s] for s in ['train', 'val', 'test']]
-                train, val, test = dataset.split_idxs
-                print(f"[Splits] sizes: train={len(train)}  val={len(val)}  test={len(test)}")                
-                print(f"  train[:10]:\n{train[:10]}")
-                print(f"  val[:10]:\n{val[:10]}")
-                print(f"  test[:10]:\n{test[:10]}")
+
+            # Make and APPLY graph-wise splits (70/20/10 by default) for streaming
+            if hasattr(dataset, 'get_idx_split'):
+                s = dataset.get_idx_split(seed=cfg.seed) # {'train': [...], 'val': [...], 'test': [...]}
+                splits = [s['train'], s['val'], s['test']]
+                set_dataset_splits(dataset, splits)      # <-- apply directly (writes to dataset.data)
+
+                # optional debug prints
+                train, val, test = splits
+                print(f"[Splits] sizes: train={len(train)}  val={len(val)}  test={len(test)}")
+                print(f"  train[:10]: {train[:10]}")
+                print(f"  val[:10]:   {val[:10]}")
+                print(f"  test[:10]:  {test[:10]}")
+            else:
+                raise RuntimeError("Dataset has no get_idx_split() to generate splits.")
+
         else:
             raise ValueError(f"Unexpected PyG Dataset identifier: {format}")
-
-    elif format == 'PyG':
-        # GraphGym default loader for Pytorch Geometric datasets
-        dataset = load_pyg(name, dataset_dir)
     else:
         raise ValueError(f"Unknown data format: {format}")
 
@@ -140,13 +143,6 @@ def load_dataset_master(format, name, dataset_dir):
                 dataset.transform = pe_transform
             else:
                 dataset.transform = T.compose([pe_transform, dataset.transform])
-
-    # If already prepared split indices, set them and skip generation.
-    if hasattr(dataset, 'split_idxs'):
-        set_dataset_splits(dataset, dataset.split_idxs)
-        delattr(dataset, 'split_idxs')
-    else:
-        raise RuntimeError("No split_idxs found and no fallback split generator configured.")
 
     return dataset
 
