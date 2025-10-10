@@ -46,7 +46,7 @@ def load_checkpoint(model, ckpt_path, device, strict=True):
     return model
 
 # Inference
-def infer_one_dir(data_dir, ckpt_path, cfg_path, out_dir, device='cuda:0', batch_size=8):
+def infer(data_dir, ckpt_path, cfg_path, out_dir, device='cuda:0', batch_size=8):
     # Build model from YAML (don’t override unless necessary)
     set_cfg(cfg)
     cfg.set_new_allowed(True)
@@ -91,7 +91,7 @@ if __name__ == "__main__":
     ap.add_argument("--batch_size", type=int, default=8)
     args = ap.parse_args()
 
-    infer_one_dir(args.data, args.ckpt, args.cfg, args.out, device=args.device, batch_size=args.batch_size)
+    infer(args.data, args.ckpt, args.cfg, args.out, device=args.device, batch_size=args.batch_size)
 
 
 #python predict.py --cfg configs/GRIT/ddacs-node-regression.yaml --ckpt results/ddacs-node-regression/41/ckpt/9.ckpt --data /mnt/data/jiang --out results/ddacs-node-regression/preds_new --batch_size 16
