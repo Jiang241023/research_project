@@ -1,0 +1,80 @@
+out_dir: results
+metric_best: mae
+metric_agg: argmin
+accelerator: "cuda:0"
+tensorboard_each_run: True
+
+dataset:
+  pe_transform_on_the_fly: True
+  format: PyG-DDACSNPYStream     
+  name: node-regression
+  dir: /mnt/data/jiang          
+  task: graph
+  split_mode: standard
+  task_type: regression
+  transductive: False
+  node_encoder: True
+  node_encoder_name: LinearNode
+  node_encoder_bn: False
+  edge_encoder: True
+  edge_encoder_name: LinearEdge
+  edge_encoder_bn: False
+  pe_transform_on_the_fly: True
+  max_samples: 256
+
+posenc_RRWP:
+  enable: False
+  ksteps: 3
+  add_identity: True
+  add_node_attr: False
+  add_inverse: True
+
+train:
+  mode: example
+  batch_size: 8              
+  eval_period: 1
+  ckpt_best: True
+  ckpt_clean: True
+
+model:
+  type: GritTransformer
+  loss_fun: mse                  
+  graph_pooling: none
+
+gt:
+  layer_type: GritTransformer
+  layers: 3
+  n_heads: 2
+  dim_hidden: 64
+  dropout: 0.1
+  attn_dropout: 0.1
+  layer_norm: False
+  batch_norm: True
+  update_e: True
+  attn:
+    clamp: 5.
+    act: 'relu'
+    full_attn: True
+    edge_enhance: True
+    O_e: True
+    norm_e: True
+    signed_sqrt: True
+
+gnn:
+  head: inductive_node
+  layers_pre_mp: 0
+  layers_post_mp: 2
+  dim_inner: 64
+  dim_out: 3
+  batchnorm: True
+  act: relu
+  dropout: 0.0
+
+optim:
+  clip_grad_norm: True
+  optimizer: adamW
+  weight_decay: 1e-5
+  base_lr: 0.0002
+  max_epoch: 10
+  scheduler: linear_with_warmup
+  num_warmup_epochs: 3
