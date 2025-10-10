@@ -79,12 +79,33 @@ def load_dataset_master(format, name, dataset_dir):
                 splits = [s['train'], s['val'], s['test']]
                 set_dataset_splits(dataset, splits)      # <-- apply directly (writes to dataset.data)
 
-                # optional debug prints
+                # Check the splits
+                print(len(dataset))
                 train, val, test = splits
                 print(f"[Splits] sizes: train={len(train)}  val={len(val)}  test={len(test)}")
-                print(f"  train[:10]: {train[:10]}")
-                print(f"  val[:10]:   {val[:10]}")
-                print(f"  test[:10]:  {test[:10]}")
+                print(f"train[:10]:\n{dataset.data.train_graph_index[:10]}")
+                print(f"val[:10]:\n{dataset.data.val_graph_index[:10]}")
+                print(f"test[:10]:\n{dataset.data.test_graph_index[:10]}")
+
+                # Check one sample from each split
+                index_train = int(dataset.data.train_graph_index[0])
+                index_val = int(dataset.data.val_graph_index[0])
+                index_test = int(dataset.data.test_graph_index[0])
+
+                sample_train = dataset[index_train]
+                sample_val   = dataset[index_val]
+                sample_test  = dataset[index_test]
+
+                print("TRAIN → idx:", index_train, "sample_id:", getattr(sample_train, "sample_id", None))
+                print("VAL   → idx:", index_val,   "sample_id:", getattr(sample_val, "sample_id", None))
+                print("TEST  → idx:", index_test,  "sample_id:", getattr(sample_test, "sample_id", None))
+
+                for name_dataset, data in [("train", sample_train), ("val", sample_val), ("test", sample_test)]:
+                    nx = None if getattr(data, "x", None) is None else tuple(data.x.shape)
+                    ny = None if getattr(data, "y", None) is None else tuple(data.y.shape)
+                    ne = None if getattr(data, "edge_index", None) is None else data.edge_index.size(1)
+                    print(f"{name_dataset}: new_concatenated_features={nx}, node_coords={ny}, edge_index={ne}, num_nodes={getattr(data, 'num_nodes', None)}")
+
             else:
                 raise RuntimeError("Dataset has no get_idx_split() to generate splits.")
 

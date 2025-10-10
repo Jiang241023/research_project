@@ -82,25 +82,26 @@ class DDACSNPYStream(Dataset):
 
         d.num_nodes = x.shape[0]
         d.sample_id = int(sid)
-
-        # (optional) default masks so node head can index without errors
-        full = torch.ones(d.num_nodes, dtype=torch.bool)
-        d.train_mask = full
-        d.val_mask = full.clone()
-        d.test_mask = full.clone()
-
-        if self.pre_transform is not None:
-            d = self.pre_transform(d)
         return d
 
-    def get_idx_split(self, seed: int = 42, ratios=(0.7, 0.2, 0.1)):
-        idx = np.arange(len(self.ids))
-        rng = np.random.default_rng(seed)
-        rng.shuffle(idx)
-        n = len(idx)
-        n_train = int(round(ratios[0] * n))
-        n_val   = int(round(ratios[1] * n))
-        train = idx[:n_train].tolist()
-        val   = idx[n_train:n_train + n_val].tolist()
-        test  = idx[n_train + n_val:].tolist()
+    def get_idx_split(self, seed, ratios=(0.7, 0.2, 0.1)):
+        n = len(self.ids)
+
+        # lengths (last split absorbs any rounding)
+        n_train = int(ratios[0] * n)
+        n_val   = int(ratios[1] * n)
+        n_test  = n - n_train - n_val
+
+        # split
+        train = np.arange(0, n_train)
+        val   = np.arange(n_train, n_train + n_val)
+        test   = np.arange(n_train + n_val, n_train + n_val + n_test)
+
+        # # shuffle each subset independently for reproducibility
+        rng_train = np.random.default_rng(seed)
+        rng_val   = np.random.default_rng(seed + 1)
+
+        rng_train.shuffle(train)
+        rng_val.shuffle(val)
+
         return {'train': train, 'val': val, 'test': test}
