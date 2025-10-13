@@ -94,4 +94,4 @@ if __name__ == "__main__":
     infer(args.data, args.ckpt, args.cfg, args.out, device=args.device, batch_size=args.batch_size)
 
 
-#python predict.py --cfg configs/GRIT/ddacs-node-regression.yaml --ckpt results/ddacs-node-regression/41/ckpt/9.ckpt --data /mnt/data/jiang --out results/ddacs-node-regression/preds_new --batch_size 16
+#python predict.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression.yaml --ckpt results/ddacs-node-regression/41/ckpt/9.ckpt --data /mnt/data/jiang --out grit_like/results/ddacs-node-regression/preds_new --batch_size 16
