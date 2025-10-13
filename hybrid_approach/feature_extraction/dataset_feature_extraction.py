@@ -178,12 +178,12 @@ def prepare_sample(h5_path, component="blank", op_form=10, timestep=3):
     edge_features = compute_edge_features(edge_index, edge2tris, repeated_elem_feats)              # (E,31)
     edge_index_2 = np.arange(edge_index.shape[0], dtype=np.int64)          # (E,)
 
-    return (#new_concatenated_features.astype(np.float32),
-            #node_displacement,
+    return (new_concatenated_features.astype(np.float32),
+            node_displacement,
             edge_index.astype(np.int64),
-            # edge_features.astype(np.float32),
-            # node_coords,
-            # node_index,
+            edge_features.astype(np.float32),
+            node_coords,
+            node_index,
             edge_index_2)
 
 # set random seed
@@ -197,7 +197,7 @@ dataset = DDACSDataset(data_dir, "h5")
 print(f"Loaded {len(dataset)} simulations")
 
 # Add the save path
-OUT_DIR = Path("/mnt/data/jiang")
+OUT_DIR = Path("/mnt/data/jiang/subsample")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Save or check samples
@@ -211,24 +211,24 @@ def features_per_sample(ddacs, out_dir: Path, action="save_npy"):
             sample_id, _, h5_path = ddacs[i]
 
             # your existing extractor
-            # new_concatenated_features, node_displacement, edge_index, edge_features, node_coordinates, node_index, edge_index_2 = prepare_sample(h5_path)
-            edge_index, edge_index_2 = prepare_sample(h5_path)
+            new_concatenated_features, node_displacement, edge_index, edge_features, node_coordinates, node_index, edge_index_2 = prepare_sample(h5_path)
+            # edge_index, edge_index_2 = prepare_sample(h5_path)
             # cast dtypes explicitly
-            # X  = new_concatenated_features.astype(np.float32)    # (N, 34)
-            # Y  = node_displacement.astype(np.float32)    # (N, 3)
+            X  = new_concatenated_features.astype(np.float32)    # (N, 34)
+            Y  = node_displacement.astype(np.float32)    # (N, 3)
             EI = edge_index.astype(np.int64)      # (E, 2)
-            # EF = edge_features.astype(np.float32) # (E, 31)
-            # node_coords = node_coordinates.astype(np.float32) 
-            # node_index = node_index.astype(np.int64)
+            EF = edge_features.astype(np.float32) # (E, 31)
+            node_coords = node_coordinates.astype(np.float32) 
+            node_index = node_index.astype(np.int64)
             EI_2 = edge_index_2.astype(np.int64)      # (E, )
 
             # save 5 arrays as separate .npy files
-            # np.save(out_dir / f"{sample_id}_new_concatenated_features.npy",  X)
-            # np.save(out_dir / f"{sample_id}_node_displacement.npy",  Y)
+            np.save(out_dir / f"{sample_id}_new_concatenated_features.npy",  X)
+            np.save(out_dir / f"{sample_id}_node_displacement.npy",  Y)
             np.save(out_dir / f"{sample_id}_edge_index.npy", EI)
-            # np.save(out_dir / f"{sample_id}_edge_features.npy", EF)
-            # np.save(out_dir / f"{sample_id}_node_coords.npy", node_coords)
-            # np.save(out_dir / f"{sample_id}_node_index.npy", node_index)
+            np.save(out_dir / f"{sample_id}_edge_features.npy", EF)
+            np.save(out_dir / f"{sample_id}_node_coords.npy", node_coords)
+            np.save(out_dir / f"{sample_id}_node_index.npy", node_index)
             np.save(out_dir / f"{sample_id}_edge_index_2.npy", EI_2)
 
         total_time = time.perf_counter() - t0
