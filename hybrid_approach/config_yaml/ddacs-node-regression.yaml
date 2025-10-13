@@ -30,7 +30,7 @@ posenc_RRWP:
   add_inverse: True
 
 train:
-  mode: example
+  mode: train
   batch_size: 8              
   eval_period: 1
   ckpt_best: True

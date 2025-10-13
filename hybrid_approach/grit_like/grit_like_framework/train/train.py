@@ -43,8 +43,8 @@ def eval_epoch(logger, loader, model):
                             params=cfg.params)
         time_start = time.time()
 
-@register_train('example')
-def train_example(loggers, loaders, model, optimizer, scheduler):
+@register_train('train')
+def train(loggers, loaders, model, optimizer, scheduler):
     start_epoch = 0
     if cfg.train.auto_resume:
         start_epoch = load_ckpt(model, optimizer, scheduler, cfg.train.epoch_resume)
