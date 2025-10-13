@@ -6,7 +6,8 @@ if ROOT not in sys.path:
 import torch
 import logging
 
-import hybrid_approach_vertex_based # noqa, register custom modules
+
+#import hybrid_approach_vertex_based # noqa, register custom modules
 from hybrid_approach_vertex_based.optimizer.extra_optimizers import ExtendedSchedulerConfig
 
 from torch_geometric.graphgym.cmd_args import parse_args

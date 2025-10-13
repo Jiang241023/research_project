@@ -14,7 +14,7 @@ from torch_geometric.graphgym.logger import infer_task, Logger
 from torch_geometric.graphgym.utils.io import dict_to_json, dict_to_tb
 from torchmetrics.functional import auroc
 
-import grit.metrics_ogb as metrics_ogb
+import hybrid_approach_vertex_based.metrics_ogb as metrics_ogb
 from hybrid_approach_vertex_based.metric_wrapper import MetricWrapper
 
 
