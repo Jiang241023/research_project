@@ -4,18 +4,19 @@ import torch_geometric as pyg
 from torch_geometric.graphgym import cfg
 from torch_geometric.graphgym.register import register_node_encoder
 
-@register_node_encoder('Centrality_Encoding')
+
+# It adds an embedding of each node’s in-degree and out-degree to the (projected) raw features
+@register_node_encoder('DegreeCentrality')
 class GraphormerCentralityEncoder(nn.Module):
     """
     Graphormer-style centrality = in-degree emb + out-degree emb, added to x.
     - Projects x from cfg.share.dim_in -> emb_dim (so shapes match).
-    - Computes degrees WITHOUT self-loops by default; clamps to [0, max_deg-1].
+    - Computes degrees ; clamps to [0, max_deg-1].
     - Uses batch.in_deg/out_deg if present, else computes on the fly.
     """
-    def __init__(self, emb_dim: int, max_deg: int = 256, count_self_loops: bool = False):
+    def __init__(self, emb_dim, max_deg = 256):
         super().__init__()
         self.max_deg = int(max_deg)
-        self.count_self_loops = bool(count_self_loops)
 
         # 1) Project raw x -> emb_dim (e.g., 34 -> 64)
         in_dim = 34  
@@ -25,12 +26,19 @@ class GraphormerCentralityEncoder(nn.Module):
         self.in_emb  = nn.Embedding(self.max_deg, emb_dim)
         self.out_emb = nn.Embedding(self.max_deg, emb_dim)
 
-    def _degree(self, edge_index, num_nodes: int, which: str) -> torch.Tensor:
-        col = 1 if which == 'in' else 0
+    def _degree(self, edge_index, num_nodes, which):
+        # For in-degree, use the destination row (edge_index[1]). For out-degree, use the source row (edge_index[0]). row 0 = source (where an edge starts). row 1 destination  
+        if which == 'in':
+            col = 1
+        else:
+            col = 0
         ei = edge_index
-        if not self.count_self_loops:
-            ei, _ = pyg.utils.remove_self_loops(ei)
+        # print(f"the shape ei:{ei.shape}")
+        # for i in range(2):
+        #     print(f"ei[{i}]: {ei[i]}")
+        # Counts how many times each node index appears in that row
         deg = pyg.utils.degree(ei[col], num_nodes=num_nodes, dtype=torch.long)
+
         return deg.clamp_(max=self.max_deg - 1)
 
     def forward(self, batch):

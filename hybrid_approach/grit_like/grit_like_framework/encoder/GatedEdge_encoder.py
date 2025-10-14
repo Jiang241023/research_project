@@ -10,13 +10,12 @@ class GatedEdgeEncoder(nn.Module):
     Projects edge_attr to emb_dim and modulates it with a gate:
         gate = sigmoid( MLP([x_u || x_v || raw_edge_attr]) )
     Assumes node features batch.x are already projected to cfg.gnn.dim_inner.
-    No Lazy modules => no warm-up forward needed.
     """
-    def __init__(self, emb_dim: int, gate_hidden: int = 64, edge_in_dim: int = 31,
-                 init_gate_bias: float = 2.0):
+    def __init__(self, emb_dim: int, gate_hidden,
+                 init_gate_bias = 2):
         super().__init__()
         self.emb_dim = emb_dim
-        self.edge_in_dim = edge_in_dim              # raw edge feature dim (31 for your dataset)
+        self.edge_in_dim = 31              # raw edge feature dim (31 my your dataset)
         self.node_dim = int(cfg.gnn.dim_inner)      # node feature dim after node encoder
 
         # 1) Project raw edge features -> model edge embedding
