@@ -118,4 +118,4 @@ if __name__ == "__main__":
                 device=args.device)
 
 
-#python predict_ddacs.py --cfg configs/GRIT/ddacs-node-regression.yaml --ckpt results/ddacs-node-regression/41/ckpt/9.ckpt --data /mnt/data/jiang --out results/ddacs-node-regression/preds_new
+#python predict_ddacs.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression.yaml --ckpt results/ddacs-node-regression/41/ckpt/9.ckpt --data /mnt/data/jiang --out results/ddacs-node-regression/preds_new

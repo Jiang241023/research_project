@@ -17,7 +17,7 @@ dataset:
   node_encoder_name: Centrality_Encoding
   node_encoder_bn: False
   edge_encoder: True
-  edge_encoder_name: LinearEdge
+  edge_encoder_name: DegreeEdge
   edge_encoder_bn: False
   pe_transform_on_the_fly: True
   max_samples: 512
@@ -69,6 +69,7 @@ gnn:
   batchnorm: True
   act: relu
   dropout: 0.0
+  
 
 optim:
   clip_grad_norm: True

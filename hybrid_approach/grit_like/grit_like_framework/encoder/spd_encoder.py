@@ -62,9 +62,9 @@ class SPDEdgeEncoder(torch.nn.Module):
     '''
         Shortest-path-distance (SPD) Embedding Encoder
     '''
-    def __init__(self, in_dim, out_dim,
+    def __init__(self, in_dim, out_dim = 31,
                  batchnorm=False, layernorm=False, use_bias=False,
-                 pad_to_full_graph=True,
+                 pad_to_full_graph=False,
                  pe_name="spd",
                  pad_0th=False, # 0-th embdding is a fixed zero-vector; For the case that 0 indicate the padding.
                  overwrite_old_attr=False,
