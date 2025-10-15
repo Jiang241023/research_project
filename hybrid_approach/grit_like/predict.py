@@ -8,6 +8,34 @@ import grit_like_framework
 from grit_like_framework.loader.dataset.ddacs_npy_stream import DDACSNPYStream
 from torch_geometric.graphgym.config import set_cfg, load_cfg, cfg
 from torch_geometric.graphgym.model_builder import create_model
+from torch_geometric.utils import degree
+
+from torch_geometric.utils import degree
+
+def _laplacian_apply(y, edge_index, num_nodes, edge_weight=None):
+    """Compute (D - A) @ y."""
+    src, dst = edge_index
+    if edge_weight is None:
+        edge_weight = y.new_ones(src.numel())
+    # neighbor sum A@y
+    msg = y[src] * edge_weight.unsqueeze(-1)          # (E,C)
+    neigh_sum = torch.zeros_like(y).index_add(0, dst, msg)
+    # degree * y
+    deg = torch.zeros(num_nodes, device=y.device, dtype=y.dtype).index_add(0, dst, edge_weight)
+    degy = deg.unsqueeze(-1) * y
+    return degy - neigh_sum
+
+def refine_tv_l2(y0, edge_index, num_nodes, lam=1e-2, steps=5, step=0.5, weight=None):
+    """
+    Solve: min_y 0.5||y-y0||^2 + 0.5*lam*sum_{(u,v)}||y_u-y_v||^2
+    by a few explicit GD steps on y (closed-form exists, but this is simple & fast).
+    """
+    y = y0.clone()
+    for _ in range(steps):
+        Ly = _laplacian_apply(y, edge_index, num_nodes, edge_weight=weight)
+        grad = (y - y0) + lam * Ly                         # (N,C)
+        y = y - step * grad
+    return y
 
 # Load checkpoint
 def load_checkpoint(model, ckpt_path, device, strict=True):
@@ -47,7 +75,7 @@ def load_checkpoint(model, ckpt_path, device, strict=True):
 
 # Inference
 def infer(data_dir, ckpt_path, cfg_path, out_dir, device='cuda:0', batch_size=8):
-    # Build model from YAML (don’t override unless necessary)
+    # Build model from YAML 
     set_cfg(cfg)
     cfg.set_new_allowed(True)
     load_cfg(cfg,  Namespace(cfg_file=cfg_path, opts=[])) # load_cfg is written to accept something that looks like args = argparse.Namespace(...)
@@ -67,16 +95,67 @@ def infer(data_dir, ckpt_path, cfg_path, out_dir, device='cuda:0', batch_size=8)
             batch = batch.to(device)
             pred, _ = model(batch) # forward pass through encoders → GRIT layers → head.
 
+            # # slice per-graph and save
+            # for g in range(int(batch.num_graphs)):
+            #     sid = int(batch.sample_id[g].item())
+            #     node_mask = (batch.batch == g)
+            #     pred_g = pred[node_mask].detach().cpu().numpy()
+
+            #     out_np = os.path.join(out_dir, f"{sid}_pred_node_displacement.npy")
+            #     np.save(out_np, pred_g)
+            #     with open(os.path.join(out_dir, f"{sid}_meta.json"), "w") as f:
+            #         json.dump({"sample_id": sid, "num_nodes": int(pred_g.shape[0]), "pred_file": os.path.basename(out_np)}, f)
             # slice per-graph and save
             for g in range(int(batch.num_graphs)):
                 sid = int(batch.sample_id[g].item())
                 node_mask = (batch.batch == g)
-                pred_g = pred[node_mask].detach().cpu().numpy()
+                node_idx = torch.where(node_mask)[0]
 
+                # raw prediction (torch)
+                y0 = pred[node_mask]                       # (N_g, C)
+
+                # build local edge_index for this graph (remap to 0..N_g-1)
+                ei = batch.edge_index
+                e_mask = node_mask[ei[0]] & node_mask[ei[1]]
+                ei_g = ei[:, e_mask]
+                id_map = -torch.ones(batch.num_nodes, dtype=torch.long, device=pred.device)
+                id_map[node_idx] = torch.arange(node_idx.numel(), device=pred.device)
+                ei_g = id_map[ei_g]                        # (2, E_g) local
+                N_g = node_idx.numel()
+
+                # optional inverse-length edge weights (needs coords)
+                pos_all = getattr(batch, 'pos', None)
+                if pos_all is None:
+                    pos_all = getattr(batch, 'node_coords', None)
+                w = None
+                if args.hf_invlen and (pos_all is not None):
+                    pos_g = pos_all[node_idx]
+                    src, dst = ei_g
+                    w = (pos_g[src] - pos_g[dst]).pow(2).sum(-1).sqrt().clamp_min(1e-12)
+                    w = 1.0 / w
+
+                # optionally save raw
+                if args.save_raw:
+                    np.save(os.path.join(out_dir, f"{sid}_pred_node_displacement_raw.npy"),
+                            y0.detach().cpu().numpy())
+
+                # refine with soft HF penalty (λ=0 → no change)
+                if args.hf_lambda > 0.0 and ei_g.numel() > 0:
+                    y_ref = refine_tv_l2(
+                        y0, ei_g, num_nodes=N_g,
+                        lam=args.hf_lambda, steps=args.hf_steps, step=args.hf_step, weight=w
+                    )
+                else:
+                    y_ref = y0
+
+                # save refined
                 out_np = os.path.join(out_dir, f"{sid}_pred_node_displacement.npy")
-                np.save(out_np, pred_g)
+                np.save(out_np, y_ref.detach().cpu().numpy())
+
                 with open(os.path.join(out_dir, f"{sid}_meta.json"), "w") as f:
-                    json.dump({"sample_id": sid, "num_nodes": int(pred_g.shape[0]), "pred_file": os.path.basename(out_np)}, f)
+                    json.dump({"sample_id": sid,
+                            "num_nodes": int(y_ref.size(0)),
+                            "pred_file": os.path.basename(out_np)}, f)
 
     print(f"[✓] Saved predictions to: {out_dir}")
 
@@ -89,8 +168,13 @@ if __name__ == "__main__":
     ap.add_argument("--out", required=True)
     ap.add_argument("--device", default="cuda:0")
     ap.add_argument("--batch_size", type=int, default=8)
+    ap.add_argument("--hf_lambda", type=float, default=1e-2, help="High-frequency penalty λ (0 disables).")
+    ap.add_argument("--hf_steps",  type=int,   default=5,    help="Gradient steps for refinement.")
+    ap.add_argument("--hf_step",   type=float, default=0.5,  help="Gradient step size.")
+    ap.add_argument("--hf_invlen", action="store_true",      help="Weight edges by 1/edge length if coords available.")
+    ap.add_argument("--save_raw",  action="store_true",      help="Also save raw (unrefined) predictions.")
     args = ap.parse_args()
 
     infer(args.data, args.ckpt, args.cfg, args.out, device=args.device, batch_size=args.batch_size)
 
-#python predict.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression.yaml --ckpt /home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like/results/ddacs-node-regression/41/ckpt/4.ckpt --data /mnt/data/jiang --out /home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like/prediction/ddacs-node-regression/preds_new --batch_size 16
+#python predict.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression.yaml --ckpt /home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like/results/ddacs-node-regression/41/ckpt/9.ckpt --data /mnt/data/jiang --out /home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like/prediction/ddacs-node-regression/preds_new --batch_size 16 --hf_lambda 1e-2 --hf_steps 5 --hf_step 0.5 --hf_invlen

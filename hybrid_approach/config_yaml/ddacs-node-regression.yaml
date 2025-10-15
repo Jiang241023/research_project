@@ -24,7 +24,7 @@ dataset:
 
 posenc_RRWP:
   enable: False
-  ksteps: 3
+  ksteps: 5
   add_identity: True
   add_node_attr: False
   add_inverse: True
@@ -79,3 +79,7 @@ optim:
   max_epoch: 5
   scheduler: linear_with_warmup
   num_warmup_epochs: 3
+
+loss:
+  lambda_tv: 1.0e-3    
+  lambda_bi: 0.0
