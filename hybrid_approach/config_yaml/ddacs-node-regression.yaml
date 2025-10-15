@@ -22,13 +22,6 @@ dataset:
   pe_transform_on_the_fly: True
   max_samples: 512
 
-posenc_RRWP:
-  enable: False
-  ksteps: 5
-  add_identity: True
-  add_node_attr: False
-  add_inverse: True
-
 train:
   mode: train
   batch_size: 8              
