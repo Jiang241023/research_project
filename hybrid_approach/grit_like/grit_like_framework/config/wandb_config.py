@@ -20,4 +20,4 @@ def set_cfg_wandb(cfg):
     cfg.wandb.project = "RT-3875"
 
     # Optional run name
-    cfg.wandb.name = ""
+    cfg.wandb.name = "RT-3875"

@@ -61,21 +61,6 @@ class GritTransformer(torch.nn.Module):
         self.encoder = FeatureEncoder(dim_in)
         dim_in = self.encoder.dim_in
 
-        self.ablation = True
-        self.ablation = False
-
-        if cfg.posenc_RRWP.enable:
-            self.rrwp_abs_encoder = register.node_encoder_dict["rrwp_linear"]\
-                (cfg.posenc_RRWP.ksteps, cfg.gnn.dim_inner)
-            rel_pe_dim = cfg.posenc_RRWP.ksteps
-            self.rrwp_rel_encoder = register.edge_encoder_dict["rrwp_linear"] \
-                (rel_pe_dim, cfg.gnn.dim_edge,
-                 pad_to_full_graph=cfg.gt.attn.full_attn,
-                 add_node_attr_as_self_loop=False,
-                 fill_value=0.
-                 )
-
-
         if cfg.gnn.layers_pre_mp > 0:
             self.pre_mp = GNNPreMP(
                 dim_in, cfg.gnn.dim_inner, cfg.gnn.layers_pre_mp)

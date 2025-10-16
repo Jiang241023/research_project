@@ -1,40 +1,19 @@
-from copy import deepcopy
-
-import numpy as np
+import math
 import torch
 import torch.nn.functional as F
-from numpy.linalg import eigvals
-from torch_geometric.utils import (get_laplacian, to_scipy_sparse_matrix,
-                                   to_undirected, to_dense_adj)
+from torch_geometric.utils import (to_undirected, to_dense_adj)
 from torch_geometric.utils.num_nodes import maybe_num_nodes
 from torch_scatter import scatter_add
-from functools import partial
-from .rrwp import add_full_rrwp
-
+from torch_geometric.transforms import BaseTransform
+from torch_geometric.data import Data
 
 def compute_posenc_stats(data, pe_types, is_undirected, cfg):
     """Precompute positional encodings for the given graph.
-    Supported PE statistics to precompute, selected by `pe_types`:
-    'LapPE': Laplacian eigen-decomposition.
     'RWSE': Random walk landing probabilities (diagonals of RW matrices).
-    'HKfullPE': Full heat kernels and their diagonals. (NOT IMPLEMENTED)
-    'HKdiagSE': Diagonals of heat kernel diffusion.
-    'ElstaticSE': Kernel based on the electrostatic interaction between nodes.
-    'RRWP': Relative Random Walk Probabilities PE (Ours, for GRIT)
-    Args:
-        data: PyG graph
-        pe_types: Positional encoding types to precompute statistics for.
-            This can also be a combination, e.g. 'eigen+rw_landing'
-        is_undirected: True if the graph is expected to be undirected
-        cfg: Main configuration node
-
-    Returns:
-        Extended PyG Data object.
     """
     # Verify PE types.
     for t in pe_types:
-        if t not in ['LapPE', 'EquivStableLapPE', 'SignNet',
-                     'RWSE', 'HKdiagSE', 'HKfullPE', 'ElstaticSE','RRWP']:
+        if t not in ['RWSE', 'RFF', 'PPRAnchors']:
             raise ValueError(f"Unexpected PE stats selection {t} in {pe_types}")
 
     # Basic preprocessing of the input graph.
@@ -42,50 +21,11 @@ def compute_posenc_stats(data, pe_types, is_undirected, cfg):
         N = data.num_nodes  # Explicitly given number of nodes, e.g. ogbg-ppa
     else:
         N = data.x.shape[0]  # Number of nodes, including disconnected nodes.
-    laplacian_norm_type = cfg.posenc_LapPE.eigen.laplacian_norm.lower()
-    if laplacian_norm_type == 'none':
-        laplacian_norm_type = None
+
     if is_undirected:
         undir_edge_index = data.edge_index
     else:
         undir_edge_index = to_undirected(data.edge_index)
-
-    # Eigen values and vectors.
-    evals, evects = None, None
-    if 'LapPE' in pe_types or 'EquivStableLapPE' in pe_types:
-        # Eigen-decomposition with numpy, can be reused for Heat kernels.
-        L = to_scipy_sparse_matrix(
-            *get_laplacian(undir_edge_index, normalization=laplacian_norm_type,
-                           num_nodes=N)
-        )
-        evals, evects = np.linalg.eigh(L.toarray())
-        
-        if 'LapPE' in pe_types:
-            max_freqs=cfg.posenc_LapPE.eigen.max_freqs
-            eigvec_norm=cfg.posenc_LapPE.eigen.eigvec_norm
-        elif 'EquivStableLapPE' in pe_types:  
-            max_freqs=cfg.posenc_EquivStableLapPE.eigen.max_freqs
-            eigvec_norm=cfg.posenc_EquivStableLapPE.eigen.eigvec_norm
-        
-        data.EigVals, data.EigVecs = get_lap_decomp_stats(
-            evals=evals, evects=evects,
-            max_freqs=max_freqs,
-            eigvec_norm=eigvec_norm)
-
-    if 'SignNet' in pe_types:
-        # Eigen-decomposition with numpy for SignNet.
-        norm_type = cfg.posenc_SignNet.eigen.laplacian_norm.lower()
-        if norm_type == 'none':
-            norm_type = None
-        L = to_scipy_sparse_matrix(
-            *get_laplacian(undir_edge_index, normalization=norm_type,
-                           num_nodes=N)
-        )
-        evals_sn, evects_sn = np.linalg.eigh(L.toarray())
-        data.eigvals_sn, data.eigvecs_sn = get_lap_decomp_stats(
-            evals=evals_sn, evects=evects_sn,
-            max_freqs=cfg.posenc_SignNet.eigen.max_freqs,
-            eigvec_norm=cfg.posenc_SignNet.eigen.eigvec_norm)
 
     # Random Walks.
     if 'RWSE' in pe_types:
@@ -97,93 +37,15 @@ def compute_posenc_stats(data, pe_types, is_undirected, cfg):
                                           num_nodes=N)
         data.pestat_RWSE = rw_landing
 
-    # Heat Kernels.
-    if 'HKdiagSE' in pe_types or 'HKfullPE' in pe_types:
-        # Get the eigenvalues and eigenvectors of the regular Laplacian,
-        # if they have not yet been computed for 'eigen'.
-        if laplacian_norm_type is not None or evals is None or evects is None:
-            L_heat = to_scipy_sparse_matrix(
-                *get_laplacian(undir_edge_index, normalization=None, num_nodes=N)
-            )
-            evals_heat, evects_heat = np.linalg.eigh(L_heat.toarray())
-        else:
-            evals_heat, evects_heat = evals, evects
-        evals_heat = torch.from_numpy(evals_heat)
-        evects_heat = torch.from_numpy(evects_heat)
+    if 'RFF' in pe_types:
+        out_dim = getattr(cfg.posenc_RFF, 'out_dim', 32)
+        sigma   = getattr(cfg.posenc_RFF, 'sigma', 50.0)
+        data = add_rff_pe(data, out_dim=out_dim, sigma=sigma, attr_name='pestat_RFF')
 
-        # Get the full heat kernels.
-        if 'HKfullPE' in pe_types:
-            # The heat kernels can't be stored in the Data object without
-            # additional padding because in PyG's collation of the graphs the
-            # sizes of tensors must match except in dimension 0. Do this when
-            # the full heat kernels are actually used downstream by an Encoder.
-            raise NotImplementedError()
-            # heat_kernels, hk_diag = get_heat_kernels(evects_heat, evals_heat,
-            #                                   kernel_times=kernel_param.times)
-            # data.pestat_HKdiagSE = hk_diag
-        # Get heat kernel diagonals in more efficient way.
-        if 'HKdiagSE' in pe_types:
-            kernel_param = cfg.posenc_HKdiagSE.kernel
-            if len(kernel_param.times) == 0:
-                raise ValueError("Diffusion times are required for heat kernel")
-            hk_diag = get_heat_kernels_diag(evects_heat, evals_heat,
-                                            kernel_times=kernel_param.times,
-                                            space_dim=0)
-            data.pestat_HKdiagSE = hk_diag
-
-    # Electrostatic interaction inspired kernel.
-    if 'ElstaticSE' in pe_types:
-        elstatic = get_electrostatic_function_encoding(undir_edge_index, N)
-        data.pestat_ElstaticSE = elstatic
-
-    if 'RRWP' in pe_types:
-        param = cfg.posenc_RRWP
-        transform = partial(add_full_rrwp,
-                            walk_length=param.ksteps,
-                            attr_name_abs="rrwp",
-                            attr_name_rel="rrwp",
-                            add_identity=True,
-                            spd=param.spd, # by default False
-                            )
-        data = transform(data)
-
+    if 'PPRAnchors' in pe_types:
+            p = cfg.posenc_PPRAnchors
+            data = add_ppr_anchors_pe(data, k=p.k, alpha=p.alpha, iters=p.iters, coord_attr=getattr(p, 'coord_attr', 'pos')) 
     return data
-
-
-def get_lap_decomp_stats(evals, evects, max_freqs, eigvec_norm='L2'):
-    """Compute Laplacian eigen-decomposition-based PE stats of the given graph.
-
-    Args:
-        evals, evects: Precomputed eigen-decomposition
-        max_freqs: Maximum number of top smallest frequencies / eigenvecs to use
-        eigvec_norm: Normalization for the eigen vectors of the Laplacian
-    Returns:
-        Tensor (num_nodes, max_freqs, 1) eigenvalues repeated for each node
-        Tensor (num_nodes, max_freqs) of eigenvector values per node
-    """
-    N = len(evals)  # Number of nodes, including disconnected nodes.
-
-    # Keep up to the maximum desired number of frequencies.
-    idx = evals.argsort()[:max_freqs]
-    evals, evects = evals[idx], np.real(evects[:, idx])
-    evals = torch.from_numpy(np.real(evals)).clamp_min(0)
-
-    # Normalize and pad eigen vectors.
-    evects = torch.from_numpy(evects).float()
-    evects = eigvec_normalizer(evects, evals, normalization=eigvec_norm)
-    if N < max_freqs:
-        EigVecs = F.pad(evects, (0, max_freqs - N), value=float('nan'))
-    else:
-        EigVecs = evects
-
-    # Pad and save eigenvalues.
-    if N < max_freqs:
-        EigVals = F.pad(evals, (0, max_freqs - N), value=float('nan')).unsqueeze(0)
-    else:
-        EigVals = evals.unsqueeze(0)
-    EigVals = EigVals.repeat(N, 1).unsqueeze(2)
-
-    return EigVals, EigVecs
 
 
 def get_rw_landing_probs(ksteps, edge_index, edge_weight=None,
@@ -234,180 +96,60 @@ def get_rw_landing_probs(ksteps, edge_index, edge_weight=None,
 
     return rw_landing
 
-
-def get_heat_kernels_diag(evects, evals, kernel_times=[], space_dim=0):
-    """Compute Heat kernel diagonal.
-
-    This is a continuous function that represents a Gaussian in the Euclidean
-    space, and is the solution to the diffusion equation.
-    The random-walk diagonal should converge to this.
-
-    Args:
-        evects: Eigenvectors of the Laplacian matrix
-        evals: Eigenvalues of the Laplacian matrix
-        kernel_times: Time for the diffusion. Analogous to the k-steps in random
-            walk. The time is equivalent to the variance of the kernel.
-        space_dim: (optional) Estimated dimensionality of the space. Used to
-            correct the diffusion diagonal by a factor `t^(space_dim/2)`. In
-            euclidean space, this correction means that the height of the
-            gaussian stays constant across time, if `space_dim` is the dimension
-            of the euclidean space.
-
-    Returns:
-        2D Tensor with shape (num_nodes, len(ksteps)) with RW landing probs
+def add_rff_pe(data, out_dim=32, sigma=50.0, attr_name='pestat_RFF'):
     """
-    heat_kernels_diag = []
-    if len(kernel_times) > 0:
-        evects = F.normalize(evects, p=2., dim=0)
-
-        # Remove eigenvalues == 0 from the computation of the heat kernel
-        idx_remove = evals < 1e-8
-        evals = evals[~idx_remove]
-        evects = evects[:, ~idx_remove]
-
-        # Change the shapes for the computations
-        evals = evals.unsqueeze(-1)  # lambda_{i, ..., ...}
-        evects = evects.transpose(0, 1)  # phi_{i,j}: i-th eigvec X j-th node
-
-        # Compute the heat kernels diagonal only for each time
-        eigvec_mul = evects ** 2
-        for t in kernel_times:
-            # sum_{i>0}(exp(-2 t lambda_i) * phi_{i, j} * phi_{i, j})
-            this_kernel = torch.sum(torch.exp(-t * evals) * eigvec_mul,
-                                    dim=0, keepdim=False)
-
-            # Multiply by `t` to stabilize the values, since the gaussian height
-            # is proportional to `1/t`
-            heat_kernels_diag.append(this_kernel * (t ** (space_dim / 2)))
-        heat_kernels_diag = torch.stack(heat_kernels_diag, dim=0).transpose(0, 1)
-
-    return heat_kernels_diag
-
-
-def get_heat_kernels(evects, evals, kernel_times=[]):
-    """Compute full Heat diffusion kernels.
-
-    Args:
-        evects: Eigenvectors of the Laplacian matrix
-        evals: Eigenvalues of the Laplacian matrix
-        kernel_times: Time for the diffusion. Analogous to the k-steps in random
-            walk. The time is equivalent to the variance of the kernel.
+    Node-wise RFF of coordinates: pe_i = cos(x_i W + b), W~N(0,1/sigma^2)
+    Writes data.pestat_RFF: (N, out_dim)
     """
-    heat_kernels, rw_landing = [], []
-    if len(kernel_times) > 0:
-        evects = F.normalize(evects, p=2., dim=0)
+    X = getattr(data, 'pos', None)
+    if X is None:
+        X = getattr(data, 'node_coords', None)
+    if X is None:
+        return data
+    X = X.float()
+    device = X.device
+    D_in = X.size(1)
+    W = torch.randn(D_in, out_dim, device=device) / sigma
+    b = 2*math.pi*torch.rand(out_dim, device=device)
+    Z = X @ W + b
+    pe = torch.cos(Z) * math.sqrt(2.0 / out_dim)
+    setattr(data, attr_name, pe)
+    return data
 
-        # Remove eigenvalues == 0 from the computation of the heat kernel
-        idx_remove = evals < 1e-8
-        evals = evals[~idx_remove]
-        evects = evects[:, ~idx_remove]
+# --- smooth diffusion from K anchors via APPNP power iterations (sparse @ edge_index) ---
+def add_ppr_anchors_pe(data, k=16, alpha=0.15, iters=10, coord_attr='pos', attr_name='pestat_PPR'):
+    import torch
+    from torch_geometric.utils import degree
+    N = data.num_nodes; device = data.edge_index.device
+    src, dst = data.edge_index
+    deg_out = degree(src, num_nodes=N).clamp_min(1.0)  # out-degree per node
 
-        # Change the shapes for the computations
-        evals = evals.unsqueeze(-1).unsqueeze(-1)  # lambda_{i, ..., ...}
-        evects = evects.transpose(0, 1)  # phi_{i,j}: i-th eigvec X j-th node
-
-        # Compute the heat kernels for each time
-        eigvec_mul = (evects.unsqueeze(2) * evects.unsqueeze(1))  # (phi_{i, j1, ...} * phi_{i, ..., j2})
-        for t in kernel_times:
-            # sum_{i>0}(exp(-2 t lambda_i) * phi_{i, j1, ...} * phi_{i, ..., j2})
-            heat_kernels.append(
-                torch.sum(torch.exp(-t * evals) * eigvec_mul,
-                          dim=0, keepdim=False)
-            )
-
-        heat_kernels = torch.stack(heat_kernels, dim=0)  # (Num kernel times) x (Num nodes) x (Num nodes)
-
-        # Take the diagonal of each heat kernel,
-        # i.e. the landing probability of each of the random walks
-        rw_landing = torch.diagonal(heat_kernels, dim1=-2, dim2=-1).transpose(0, 1)  # (Num nodes) x (Num kernel times)
-
-    return heat_kernels, rw_landing
-
-
-def get_electrostatic_function_encoding(edge_index, num_nodes):
-    """Kernel based on the electrostatic interaction between nodes.
-    """
-    L = to_scipy_sparse_matrix(
-        *get_laplacian(edge_index, normalization=None, num_nodes=num_nodes)
-    ).todense()
-    L = torch.as_tensor(L)
-    Dinv = torch.eye(L.shape[0]) * (L.diag() ** -1)
-    A = deepcopy(L).abs()
-    A.fill_diagonal_(0)
-    DinvA = Dinv.matmul(A)
-
-    electrostatic = torch.pinverse(L)
-    electrostatic = electrostatic - electrostatic.diag()
-    green_encoding = torch.stack([
-        electrostatic.min(dim=0)[0],  # Min of Vi -> j
-        electrostatic.max(dim=0)[0],  # Max of Vi -> j
-        electrostatic.mean(dim=0),  # Mean of Vi -> j
-        electrostatic.std(dim=0),  # Std of Vi -> j
-        electrostatic.min(dim=1)[0],  # Min of Vj -> i
-        electrostatic.max(dim=0)[0],  # Max of Vj -> i
-        electrostatic.mean(dim=1),  # Mean of Vj -> i
-        electrostatic.std(dim=1),  # Std of Vj -> i
-        (DinvA * electrostatic).sum(dim=0),  # Mean of interaction on direct neighbour
-        (DinvA * electrostatic).sum(dim=1),  # Mean of interaction from direct neighbour
-    ], dim=1)
-
-    return green_encoding
-
-
-def eigvec_normalizer(EigVecs, EigVals, normalization="L2", eps=1e-12):
-    """
-    Implement different eigenvector normalizations.
-    """
-
-    EigVals = EigVals.unsqueeze(0)
-
-    if normalization == "L1":
-        # L1 normalization: eigvec / sum(abs(eigvec))
-        denom = EigVecs.norm(p=1, dim=0, keepdim=True)
-
-    elif normalization == "L2":
-        # L2 normalization: eigvec / sqrt(sum(eigvec^2))
-        denom = EigVecs.norm(p=2, dim=0, keepdim=True)
-
-    elif normalization == "abs-max":
-        # AbsMax normalization: eigvec / max|eigvec|
-        denom = torch.max(EigVecs.abs(), dim=0, keepdim=True).values
-
-    elif normalization == "wavelength":
-        # AbsMax normalization, followed by wavelength multiplication:
-        # eigvec * pi / (2 * max|eigvec| * sqrt(eigval))
-        denom = torch.max(EigVecs.abs(), dim=0, keepdim=True).values
-        eigval_denom = torch.sqrt(EigVals)
-        eigval_denom[EigVals < eps] = 1  # Problem with eigval = 0
-        denom = denom * eigval_denom * 2 / np.pi
-
-    elif normalization == "wavelength-asin":
-        # AbsMax normalization, followed by arcsin and wavelength multiplication:
-        # arcsin(eigvec / max|eigvec|)  /  sqrt(eigval)
-        denom_temp = torch.max(EigVecs.abs(), dim=0, keepdim=True).values.clamp_min(eps).expand_as(EigVecs)
-        EigVecs = torch.asin(EigVecs / denom_temp)
-        eigval_denom = torch.sqrt(EigVals)
-        eigval_denom[EigVals < eps] = 1  # Problem with eigval = 0
-        denom = eigval_denom
-
-    elif normalization == "wavelength-soft":
-        # AbsSoftmax normalization, followed by wavelength multiplication:
-        # eigvec / (softmax|eigvec| * sqrt(eigval))
-        denom = (F.softmax(EigVecs.abs(), dim=0) * EigVecs.abs()).sum(dim=0, keepdim=True)
-        eigval_denom = torch.sqrt(EigVals)
-        eigval_denom[EigVals < eps] = 1  # Problem with eigval = 0
-        denom = denom * eigval_denom
-
+    # choose anchors (FPS or random)
+    coords = getattr(data, coord_attr, None) or getattr(data, 'node_coords', None)
+    if coords is not None:
+        xyz = coords.float()
+        sel = [int(torch.randint(0, N, (1,)).item())]
+        d2  = torch.full((N,), float('inf'), device=xyz.device)
+        for _ in range(1, k):
+            d2 = torch.minimum(d2, ((xyz - xyz[sel[-1]])**2).sum(-1))
+            sel.append(int(torch.argmax(d2).item()))
+        anchors = torch.tensor(sel, device=device)
     else:
-        raise ValueError(f"Unsupported normalization `{normalization}`")
+        anchors = torch.randperm(N, device=device)[:k]
 
-    denom = denom.clamp_min(eps).expand_as(EigVecs)
-    EigVecs = EigVecs / denom
+    pe = torch.zeros(N, k, device=device)
+    # Pv = average of neighbor values: Pv[u] = (1/deg_out[u]) * sum_{u->j} v[j]
+    for j, a in enumerate(anchors.tolist()):
+        x = torch.zeros(N, device=device); x[a] = 1.0
+        v = x.clone()
+        for _ in range(iters):
+            # sum over neighbors j for each u: sum v[j] for edges (u->j)
+            msg = torch.zeros(N, device=device).index_add_(0, src, v[dst])
+            v = (1 - alpha) * (msg / deg_out) + alpha * x
+        pe[:, j] = v
+    setattr(data, attr_name, pe)
+    return data
 
-    return EigVecs
-
-from torch_geometric.transforms import BaseTransform
-from torch_geometric.data import Data, HeteroData
 
 class ComputePosencStat(BaseTransform):
     def __init__(self, pe_types, is_undirected, cfg):

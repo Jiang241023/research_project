@@ -60,16 +60,16 @@ class MultiHeadAttentionLayerGritSparse(nn.Module):
         self.clamp = np.abs(clamp) if clamp is not None else None
         self.edge_enhance = edge_enhance
 
-        self.Q = nn.Linear(in_dim, out_dim * num_heads, bias=True)
-        self.K = nn.Linear(in_dim, out_dim * num_heads, bias=use_bias)
-        self.E = nn.Linear(in_dim, out_dim * num_heads * 2, bias=True)
-        self.V = nn.Linear(in_dim, out_dim * num_heads, bias=use_bias)
+        self.Q = nn.Linear(in_dim, out_dim * num_heads, bias=True) # W_Q
+        self.K = nn.Linear(in_dim, out_dim * num_heads, bias=use_bias) # W_K
+        self.E = nn.Linear(in_dim, out_dim * num_heads * 2, bias=True)  # packs W_Ew and W_Eb
+        self.V = nn.Linear(in_dim, out_dim * num_heads, bias=use_bias) # W_V
         nn.init.xavier_normal_(self.Q.weight)
         nn.init.xavier_normal_(self.K.weight)
         nn.init.xavier_normal_(self.E.weight)
         nn.init.xavier_normal_(self.V.weight)
 
-        self.Aw = nn.Parameter(torch.zeros(self.out_dim, self.num_heads, 1), requires_grad=True)
+        self.Aw = nn.Parameter(torch.zeros(self.out_dim, self.num_heads, 1), requires_grad=True) # W_A
         nn.init.xavier_normal_(self.Aw)
 
         if act is None:
@@ -84,18 +84,18 @@ class MultiHeadAttentionLayerGritSparse(nn.Module):
     def propagate_attention(self, batch):
         src = batch.K_h[batch.edge_index[0]]      # (num relative) x num_heads x out_dim
         dest = batch.Q_h[batch.edge_index[1]]     # (num relative) x num_heads x out_dim
-        score = src + dest                        # element-wise multiplication
+        score = src + dest                        # element-wise multiplication (W_Q x_i + W_K x_j)
 
         if batch.get("E", None) is not None:
             batch.E = batch.E.view(-1, self.num_heads, self.out_dim * 2)
             E_w, E_b = batch.E[:, :, :self.out_dim], batch.E[:, :, self.out_dim:]
             # (num relative) x num_heads x out_dim
-            score = score * E_w
-            score = torch.sqrt(torch.relu(score)) - torch.sqrt(torch.relu(-score))
-            score = score + E_b
+            score = score * E_w # ⊙ (W_Ew e_ij)
+            score = torch.sqrt(torch.relu(score)) - torch.sqrt(torch.relu(-score)) # ρ(·)
+            score = score + E_b # + (W_Eb e_ij)
 
-        score = self.act(score)
-        e_t = score
+        score = self.act(score)  # σ(·), ReLU by default
+        e_t = score #e_ij
 
         # output edge
         if batch.get("E", None) is not None:
@@ -107,15 +107,16 @@ class MultiHeadAttentionLayerGritSparse(nn.Module):
             score = torch.clamp(score, min=-self.clamp, max=self.clamp)
 
         raw_attn = score
-        score = pyg_softmax(score, batch.edge_index[1])  # (num relative) x num_heads x 1
-        score = self.dropout(score)
-        batch.attn = score
+        score = pyg_softmax(score, batch.edge_index[1])  # softmax_j per destination i
+        score = self.dropout(score) 
+        batch.attn = score # α_ij 
 
-        # Aggregate with Attn-Score
+        # Aggregate with Attn-Score  Σ_j α_ij * (W_V x_j)     -- per head, then scatter-sum to node i
         msg = batch.V_h[batch.edge_index[0]] * score  # (num relative) x num_heads x out_dim
         batch.wV = torch.zeros_like(batch.V_h)  # (num nodes in batch) x num_heads x out_dim
         scatter(msg, batch.edge_index[1], dim=0, out=batch.wV, reduce='add')
 
+        # # + Σ_j α_ij * (W_Ev \hat e_ij)   (edge-enhanced term)
         if self.edge_enhance and batch.E is not None:
             rowV = scatter(e_t * score, batch.edge_index[1], dim=0, reduce="add")
             rowV = oe.contract("nhd, dhc -> nhc", rowV, self.VeRow, backend="torch")

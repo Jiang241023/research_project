@@ -49,29 +49,6 @@ def set_cfg_gt(cfg):
 
     cfg.gt.residual = True
 
-    # BigBird model/GPS-BigBird layer.
-    cfg.gt.bigbird = CN()
-
-    cfg.gt.bigbird.attention_type = "block_sparse"
-
-    cfg.gt.bigbird.chunk_size_feed_forward = 0
-
-    cfg.gt.bigbird.is_decoder = False
-
-    cfg.gt.bigbird.add_cross_attention = False
-
-    cfg.gt.bigbird.hidden_act = "relu"
-
-    cfg.gt.bigbird.max_position_embeddings = 128
-
-    cfg.gt.bigbird.use_bias = False
-
-    cfg.gt.bigbird.num_random_blocks = 3
-
-    cfg.gt.bigbird.block_size = 3
-
-    cfg.gt.bigbird.layer_norm_eps = 1e-6
-
     # ------------- Special for GRIT ------------
     cfg.gt.update_e = True
     cfg.gt.attn = CN()

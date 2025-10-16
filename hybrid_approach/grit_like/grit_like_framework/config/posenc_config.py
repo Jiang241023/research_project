@@ -8,19 +8,12 @@ def set_cfg_posenc(cfg):
     """
 
     # Argument group for each Positional Encoding class.
-    cfg.posenc_LapPE = CN()
-    cfg.posenc_SignNet = CN()
     cfg.posenc_RWSE = CN()
-    cfg.posenc_HKdiagSE = CN()
-    cfg.posenc_ElstaticSE = CN()
-    cfg.posenc_EquivStableLapPE = CN()
-    cfg.posenc_RRWP = CN()
+    cfg.posenc_RFF = CN()
+    cfg.posenc_PPRAnchors = CN()
 
-    # Common arguments to all PE types.
-    for name in ['posenc_LapPE', 'posenc_SignNet',
-                 'posenc_RWSE', 'posenc_HKdiagSE', 'posenc_ElstaticSE',
-                 'posenc_RRWP',
-                 ]:
+    # Common arguments.
+    for name in ['posenc_RWSE', 'posenc_RFF', 'posenc_PPRAnchors']:
         pecfg = getattr(cfg, name)
         # Use extended positional encodings
         pecfg.enable = False
@@ -48,29 +41,7 @@ def set_cfg_posenc(cfg):
         # a separate variable in the PyG graph batch object.
         pecfg.pass_as_var = False
 
-    # Config for EquivStable LapPE
-    cfg.posenc_EquivStableLapPE.enable = False
-    cfg.posenc_EquivStableLapPE.raw_norm_type = 'none'
-
-    # Config for Laplacian Eigen-decomposition for PEs that use it.
-    for name in ['posenc_LapPE', 'posenc_SignNet', 'posenc_EquivStableLapPE']:
-        pecfg = getattr(cfg, name)
-        pecfg.eigen = CN()
-
-        # The normalization scheme for the graph Laplacian: 'none', 'sym', or 'rw'
-        pecfg.eigen.laplacian_norm = 'sym'
-
-        # The normalization scheme for the eigen vectors of the Laplacian
-        pecfg.eigen.eigvec_norm = 'L2'
-
-        # Maximum number of top smallest frequencies & eigenvectors to use
-        pecfg.eigen.max_freqs = 10
-
-    # Config for SignNet-specific options.
-    cfg.posenc_SignNet.phi_out_dim = 4
-    cfg.posenc_SignNet.phi_hidden_dim = 64
-
-    for name in ['posenc_RWSE', 'posenc_HKdiagSE', 'posenc_ElstaticSE']:
+    for name in ['posenc_RWSE']:
         pecfg = getattr(cfg, name)
 
         # Config for Kernel-based PE specific options.
@@ -85,14 +56,7 @@ def set_cfg_posenc(cfg):
         # If set, it will be executed via `eval()` and override posenc.kernel.times
         pecfg.kernel.times_func = ''
 
-    # Override default, electrostatic kernel has fixed set of 10 measures.
-    cfg.posenc_ElstaticSE.kernel.times_func = 'range(10)'
 
-    # ----------------- Note: RRWP --------------
-    cfg.posenc_RRWP.enable = False
-    cfg.posenc_RRWP.ksteps = 21
-    cfg.posenc_RRWP.add_identity = True
-    cfg.posenc_RRWP.spd = False
 
 
 

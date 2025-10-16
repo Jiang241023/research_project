@@ -22,6 +22,30 @@ dataset:
   pe_transform_on_the_fly: True
   max_samples: 512
 
+posenc_RWSE:
+  enable: False
+  kernel:
+    times: [1, 2, 3, 4]
+
+posenc_RFF:
+  enable: False
+  out_dim: 64
+  sigma: 50
+
+posenc_PPRAnchors:
+  enable: False
+  k: 16
+  alpha: 0.15
+  iters: 10
+
+posenc_LFPE:
+  D: 64          # PE output size (often = gnn.dim_inner)
+  F_dim: 64      # must be even
+  H_dim: 32
+  gamma: 20
+  coord_attr: node_coords   # or "pos" if you store coords there
+  fuse: concat                 # "add" or "concat"
+
 train:
   mode: train
   batch_size: 8              
@@ -55,8 +79,8 @@ gt:
 
 gnn:
   head: inductive_node
-  layers_pre_mp: 0
-  layers_post_mp: 2
+  layers_pre_mp: 1  # 'pre–message passing' MLP
+  layers_post_mp: 3 # 'post–message passing' MLP
   dim_inner: 64
   dim_out: 3
   batchnorm: True
