@@ -1,0 +1,95 @@
+out_dir: results
+metric_best: mae
+metric_agg: argmin
+accelerator: "cuda:0"
+tensorboard_each_run: True
+
+dataset:
+  pe_transform_on_the_fly: True
+  format: PyG-DDACSNPYStream     
+  name: node-regression
+  dir: /mnt/data/jiang          
+  task: graph
+  split_mode: standard
+  task_type: regression
+  transductive: False
+  node_encoder: True
+  node_encoder_name: DegreeCentrality
+  node_encoder_bn: False
+  edge_encoder: True
+  edge_encoder_name: EdgeCentrality
+  edge_encoder_bn: False
+  pe_transform_on_the_fly: True
+  max_samples: 512
+
+posenc_RWSE:
+  enable: False
+  kernel:
+    times: [1, 2, 3, 4]
+
+posenc_RFF:
+  enable: False
+  out_dim: 64
+  sigma: 50
+
+posenc_PPRAnchors:
+  enable: False
+  k: 16
+  alpha: 0.15
+  iters: 10
+
+posenc_LFPE:
+  D: 64          # PE output size (often = gnn.dim_inner)
+  F_dim: 64      # must be even
+  H_dim: 32
+  gamma: 20
+  coord_attr: node_coords   # or "pos" if you store coords there
+  fuse: concat                 # "add" or "concat"
+
+train:
+  mode: train
+  batch_size: 8              
+  eval_period: 1
+  ckpt_best: True
+  ckpt_clean: True
+
+model:
+  type: EdgeAugmentedGraphTransformer
+  loss_fun: mse                  
+  graph_pooling: none
+
+gt:
+  layer_type: egt_layer
+  layers: 3
+  n_heads: 2
+  dim_hidden: 64
+  dropout: 0.1
+  attn_dropout: 0.1
+  layer_norm: False
+  batch_norm: True
+  update_e: True
+
+
+gnn:
+  head: inductive_node
+  layers_pre_mp: 1  # 'pre–message passing' MLP
+  layers_post_mp: 3 # 'post–message passing' MLP
+  dim_inner: 64
+  dim_out: 3
+  batchnorm: True
+  act: relu
+  dropout: 0.0
+  
+
+optim:
+  clip_grad_norm: True
+  optimizer: adamW
+  weight_decay: 1e-5
+  base_lr: 0.0002
+  max_epoch: 5
+  scheduler: linear_with_warmup
+  num_warmup_epochs: 3
+
+loss:
+  lambda_tv: 1.0e-3    
+  lambda_bi: 0.0
