@@ -4,8 +4,8 @@ import torch
 from torch_geometric.loader import DataLoader
 from argparse import Namespace
 
-import egt_like_framework  
-from egt_like_framework.loader.dataset.ddacs_npy_stream import DDACSNPYStream
+import graphormer_like_framework  
+from graphormer_like_framework.loader.dataset.ddacs_npy_stream import DDACSNPYStream
 from torch_geometric.graphgym.config import set_cfg, load_cfg, cfg
 from torch_geometric.graphgym.model_builder import create_model
 from torch_geometric.utils import degree
@@ -173,4 +173,4 @@ if __name__ == "__main__":
 
     infer(args.data, args.ckpt, args.cfg, args.out, device=args.device, batch_size=args.batch_size)
 
-#python predict.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression.yaml --ckpt /home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like/results/ddacs-node-regression/41/ckpt/4.ckpt --data /mnt/data/jiang --out /home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like/prediction/ddacs-node-regression/preds_new --batch_size 16
+#python predict.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression-graphormerlike.yaml  --ckpt /home/RUS_CIP/st186731/research_project/hybrid_approach/graphormer_like/results/ddacs-node-regression-graphormerlike/41/ckpt/4.ckpt --data /mnt/data/jiang --out /home/RUS_CIP/st186731/research_project/hybrid_approach/graphormer_like/prediction/ddacs-node-regression/preds_new --batch_size 16

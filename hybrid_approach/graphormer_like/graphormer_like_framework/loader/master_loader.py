@@ -9,12 +9,12 @@ from torch_geometric.graphgym.config import cfg
 from torch_geometric.graphgym.loader import load_pyg
 from torch_geometric.graphgym.register import register_loader
 
-from egt_like_framework.loader.split_generator import (#prepare_splits,
+from graphormer_like_framework.loader.split_generator import (#prepare_splits,
                                          set_dataset_splits)
-from egt_like_framework.transform.posenc_stats import compute_posenc_stats, ComputePosencStat
-from egt_like_framework.transform.transforms import pre_transform_in_memory
+from graphormer_like_framework.transform.posenc_stats import compute_posenc_stats, ComputePosencStat
+from graphormer_like_framework.transform.transforms import pre_transform_in_memory
 
-from egt_like_framework.loader.dataset.ddacs_npy_stream import DDACSNPYStream
+from graphormer_like_framework.loader.dataset.ddacs_npy_stream import DDACSNPYStream
 
 def log_loaded_dataset(dataset, format, name):
     logging.info(f"[*] Loaded dataset '{name}' from '{format}':")

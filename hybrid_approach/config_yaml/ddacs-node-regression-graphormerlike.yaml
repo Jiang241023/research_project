@@ -54,12 +54,12 @@ train:
   ckpt_clean: True
 
 model:
-  type: EdgeAugmentedGraphTransformer
+  type: GraphormerEdgeTransformer
   loss_fun: mse                  
   graph_pooling: none
 
 gt:
-  layer_type: egt_layer
+  layer_type: GraphormerEdge
   layers: 3
   n_heads: 2
   dim_hidden: 64

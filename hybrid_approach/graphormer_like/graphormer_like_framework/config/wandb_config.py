@@ -14,10 +14,10 @@ def set_cfg_wandb(cfg):
     cfg.wandb.use = False
 
     # Wandb entity name, should exist beforehand
-    cfg.wandb.entity = "egt_like_hybrid_approach"
+    cfg.wandb.entity = "edgeformer_like_hybrid_approach"
 
     # Wandb project name, will be created in your team if doesn't exist already
-    cfg.wandb.project = "RT-3875-egt"
+    cfg.wandb.project = "RT-3875-graphormerlike"
 
     # Optional run name
-    cfg.wandb.name = "RT-3875-egt"
+    cfg.wandb.name = "RT-3875-graphormerlike"
