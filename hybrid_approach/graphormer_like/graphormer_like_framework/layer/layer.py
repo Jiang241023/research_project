@@ -1,12 +1,15 @@
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch_scatter import scatter, scatter_add, scatter_max
 from torch_geometric.graphgym.register import register_layer
 from yacs.config import CfgNode as CN
+import warnings
 
+# utils
 def pyg_softmax(src, index, num_nodes=None):
-    """Sparse softmax over src grouped by index."""
+    """Sparse softmax over src grouped by 'index' (dst)."""
     num_nodes = int(index.max().item()) + 1 if num_nodes is None else num_nodes
     max_per_index = scatter_max(src, index, dim=0, dim_size=num_nodes)[0]
     out = src - max_per_index[index]
@@ -14,31 +17,32 @@ def pyg_softmax(src, index, num_nodes=None):
     out_sum = scatter_add(out, index, dim=0, dim_size=num_nodes)[index] + 1e-16
     return out / out_sum
 
-def _build_edge_edge_index(edge_index: torch.Tensor, num_edges: int, num_nodes: int):
-    """
-    Build line-graph connectivity (edge->edge) where two original edges are adjacent
-    if they share a node. Returns e_edge_index of shape (2, M).
-    Works on the directed edge list.
-    """
+# Treat every original edge as a token/node, and connect two edge-tokens if their original edges share a node
+def build_edge_edge_index(edge_index, num_edges, num_nodes):
+    """Line-graph connectivity (edge→edge) if two edges share a node."""
+
+    # Extract the source/target arrays and keep E handy.
     device = edge_index.device
     E = num_edges
-    src, dst = edge_index  # (E,), (E,)
+    src, dst = edge_index
 
-    nodes = torch.cat([src, dst], dim=0)  # (2E,)
-    eids  = torch.cat([torch.arange(E, device=device),
-                       torch.arange(E, device=device)], 0)
+    # Make a list of half-edges appearing twice—once at its source node and once at its destination node.
+    nodes = torch.cat([src, dst], dim=0)                          # (2E,) nodes[k] is the node id of half-edge k; eids[k] tells which original edge that half-edge belongs to.
+    edge_ids  = torch.cat([torch.arange(E, device=device),
+                       torch.arange(E, device=device)], 0)        # (2E,) Make a list of half-edges
 
+    # Sort them by node id so that all half-edges incident to the same node are contiguous.
     order = torch.argsort(nodes)
     nodes_sorted = nodes[order]
-    eids_sorted  = eids[order]
+    edge_ids_sorted  = edge_ids[order]
+    _, counts = torch.unique_consecutive(nodes_sorted, return_counts=True) # counts gives, for each node (in ascending order), how many incident half-edges it has.
 
-    _, counts = torch.unique_consecutive(nodes_sorted, return_counts=True)
-
+    # This encodes “two edges are adjacent if they share this node.”
     e_row, e_col = [], []
     start = 0
     for c in counts.tolist():
         if c > 1:
-            group = eids_sorted[start:start + c]      # incident edges at this node
+            group = edge_ids_sorted[start:start + c]
             g1 = group.repeat_interleave(c)
             g2 = group.repeat(c)
             mask = g1 != g2
@@ -46,172 +50,236 @@ def _build_edge_edge_index(edge_index: torch.Tensor, num_edges: int, num_nodes: 
             e_col.append(g2[mask])
         start += c
 
+    # If no node had c>1, return an empty adjacency:
     if not e_row:
         return torch.empty(2, 0, dtype=torch.long, device=device)
 
+    # Otherwise, concatenate pairs from all nodes:
     e_row = torch.cat(e_row, dim=0)
     e_col = torch.cat(e_col, dim=0)
 
-    # Deduplicate pairs that appear from both endpoints
-    key = e_row * E + e_col
+    # Deduplicate pair. For example: Before deduplication, pairs_raw = [ e0→e1, e1→e0, e0→e1, e1→e0 ] After deduplication: pairs_unique = [ e0→e1, e1→e0 ]
+    key  = e_row * E + e_col
     uniq = torch.unique(key)
-    e_row = (uniq // E).to(torch.long)
-    e_col = (uniq %  E).to(torch.long)
+    e_row = (uniq // E).long()
+    e_col = (uniq %  E).long()
     return torch.stack([e_row, e_col], dim=0)
 
-class MultiHeadAttentionGraphormerEdge(nn.Module):
+class Attention(nn.Module):
     """
-    Multi-head self-attention for edge tokens without relation-aware biases.
+    Multi-head scaled dot-product attention over edge tokens.
+      - x_e:   (E, in_dim)
+      - e_ei:  (2, M)  (src_edge -> dst_edge)
+      - attn_bias: optional (M, H) or broadcastable
+    Returns: (E, embed_dim)
     """
-    def __init__(self, in_dim, out_dim, num_heads, use_bias=True,
-                 dropout=0.0, act=None, clamp=None, **kwargs):
+    def __init__(self, in_dim, embed_dim, num_heads, bias=True, attn_dropout=0):
         super().__init__()
-        assert out_dim % 1 == 0
-        self.num_heads = num_heads
-        self.out_dim = out_dim
-        self.dropout = nn.Dropout(dropout)
+        assert embed_dim % num_heads == 0, "embed_dim must be divisible by num_heads"
+        self.E_dim = embed_dim # The total dimension of the edge/token embedding
+        self.H = num_heads # The number of attention heads
+        self.D = embed_dim // num_heads # The per-head dimension
+        self.scale = self.D ** -0.5 # The scaled dot-product factor
 
-        self.Q = nn.Linear(in_dim, num_heads * out_dim, bias=True)
-        self.K = nn.Linear(in_dim, num_heads * out_dim, bias=use_bias)
-        self.V = nn.Linear(in_dim, num_heads * out_dim, bias=use_bias)
+        # Separate Q/K/V (instead of one big qkv layer)
+        self.Wq = nn.Linear(in_dim, embed_dim, bias=bias)
+        self.Wk = nn.Linear(in_dim, embed_dim, bias=bias)
+        self.Wv = nn.Linear(in_dim, embed_dim, bias=bias)
 
-        nn.init.xavier_normal_(self.Q.weight)
-        nn.init.xavier_normal_(self.K.weight)
-        nn.init.xavier_normal_(self.V.weight)
+        self.out = nn.Linear(embed_dim, embed_dim, bias=bias)
+        self.dropout = nn.Dropout(attn_dropout)
 
-        # project per-head feature vector -> scalar logit
-        self.Aw = nn.Parameter(torch.zeros(out_dim, num_heads, 1))
-        nn.init.xavier_normal_(self.Aw)
+    # Reshape a per-edge embedding into multi-head format.
+    def split_heads(self, t):
+        # (E, E_dim) -> (E, H, D)
+        E = t.size(0) # number of edge tokens
+        return t.view(E, self.H, self.D)
 
-        self.act = act if act is not None else nn.Identity()
-        self.clamp = np.abs(clamp) if clamp is not None else None
+    def forward(self, edge_features, edge_edge_index, attn_bias):
+        E = edge_features.size(0) # 
+        src_e, dst_e = edge_edge_index  # (M,), (M,)
 
-    def forward(self, batch):
-        E = batch.edge_attr                      # (E, Fe)
-        num_edges = E.size(0)
+        q = self.split_heads(self.Wq(edge_features))  # (E, H, D)
+        k = self.split_heads(self.Wk(edge_features))  # (E, H, D)
+        v = self.split_heads(self.Wv(edge_features))  # (E, H, D)
 
-        # Ensure line-graph connectivity exists
-        e_ei = getattr(batch, "edge_edge_index", None)
-        if e_ei is None:
-            e_ei = _build_edge_edge_index(batch.edge_index, num_edges, batch.num_nodes)
-            batch.edge_edge_index = e_ei
+        q_dst = q.index_select(0, dst_e)     # (M, H, D)
+        k_src = k.index_select(0, src_e)     # (M, H, D)
 
-        Q_h = self.Q(E).view(-1, self.num_heads, self.out_dim)  # (E, H, D)
-        K_h = self.K(E).view(-1, self.num_heads, self.out_dim)
-        V_h = self.V(E).view(-1, self.num_heads, self.out_dim)
+        # logits per (src,dst,head): dot over D
+        logits = (q_dst * k_src).sum(-1) * self.scale  # (M, H)
+        if attn_bias is not None:
+            logits = logits + attn_bias                # broadcastable to (M, H)
 
-        src_edges = e_ei[0]  # edge-token ids
-        dst_edges = e_ei[1]
+        # softmax over sources for each destination edge-token
+        attn = pyg_softmax(logits, index=dst_e, num_nodes=E)  # (M, H)
+        attn = self.dropout(attn)
 
-        score_vec = K_h[src_edges] + Q_h[dst_edges]             # (M, H, D)
-        score_vec = self.act(score_vec)
+        # weighted sum of V[src] into each dst
+        v_src = v.index_select(0, src_e)              # (M, H, D)
+        msg = v_src * attn.unsqueeze(-1)              # (M, H, D)
 
-        raw_attn = torch.einsum('ehd,dhc->ehc', score_vec, self.Aw).squeeze(-1)  # (M, H)
+        out = torch.zeros_like(v)                     # (E, H, D)
+        scatter(msg, dst_e, dim=0, out=out, reduce='add')  # sum per dst
 
-        if self.clamp is not None:
-            raw_attn = torch.clamp(raw_attn, -self.clamp, self.clamp)
+        # merge heads
+        out = out.reshape(E, self.E_dim)              # (E, embed_dim)
+        return self.out(out)  
 
-        attn_weights = pyg_softmax(raw_attn, index=dst_edges, num_nodes=num_edges)  # (M, H)
-        attn_weights = self.dropout(attn_weights)
-
-        msg = V_h[src_edges] * attn_weights.unsqueeze(-1)       # (M, H, D)
-        edge_out = torch.zeros_like(V_h)                         # (E, H, D)
-        scatter(msg, dst_edges, dim=0, out=edge_out, reduce='add')
-
-        return edge_out, None
-
+# Graphormer Edge Layer (pre-LN)
 @register_layer("GraphormerEdge")
 class GraphormerEdgeLayer(nn.Module):
     """
-    Transformer encoder layer that operates on edge tokens; optionally updates nodes.
+    Pre-LN Transformer layer on EDGE tokens (line graph), optional edge→node update.
+
+    Equations (edge stream):
+      h'_e = MHA(LN(h_e)) + h_e
+      h_e  = FFN(LN(h'_e)) + h'_e
     """
     def __init__(self, in_dim, out_dim, num_heads,
                  dropout=0.0, attn_dropout=0.0,
-                 layer_norm=True, batch_norm=True, residual=True,
-                 act='relu', update_nodes=True, cfg=CN(), **kwargs):
+                 layer_norm=True, residual=True,
+                 act='Gelu', update_nodes=True, cfg=CN(), **kwargs):
         super().__init__()
-        self.in_dim = in_dim
-        self.out_dim = out_dim
+        # For strict Graphormer, model dim stays constant across sublayers.
+        if in_dim == out_dim:
+            self.proj_in  = nn.Identity()
+        else:
+             self.proj_in = nn.Linear(in_dim, out_dim)
+        self.model_dim = out_dim
         self.num_heads = num_heads
-        self.residual = residual
+        self.residual  = residual
         self.update_nodes = cfg.get("update_nodes", update_nodes)
+        self.deg_coef_edges = nn.Parameter(torch.zeros(1, self.model_dim, 2))
+        nn.init.xavier_normal_(self.deg_coef_edges)
 
-        attn_kwargs = cfg.get("attn", {})
-        self.attention = MultiHeadAttentionGraphormerEdge(
-            in_dim=in_dim,
-            out_dim=out_dim // num_heads,
-            num_heads=num_heads,
-            dropout=attn_dropout,
-            act=nn.ReLU() if act == 'relu' else nn.Identity(),
-            clamp=attn_kwargs.get("clamp", None),
+        # Attention 
+        if layer_norm == True:
+            self.edge_layernorm_1 = nn.LayerNorm(self.model_dim) # A LayerNorm that will normalize each edge token’s feature vector (length = model_dim) before the attention (typical pre-LN pattern).
+        else:
+            self.edge_layernorm_1 = nn.Identity()
+        self.attn_e = Attention(
+            in_dim=self.model_dim, embed_dim=self.model_dim,
+            num_heads=num_heads, attn_dropout=attn_dropout
         )
+        self.drop_attn = nn.Dropout(dropout)
 
-        self.O_e = nn.Linear(out_dim, out_dim) if cfg.attn.get("O_e", True) else nn.Identity()
-        self.O_v = nn.Linear(out_dim, out_dim) if self.update_nodes else nn.Identity()
-
-        self.norm_e = nn.LayerNorm(out_dim) if layer_norm else nn.Identity()
-        self.norm_v = nn.LayerNorm(out_dim) if (self.update_nodes and layer_norm) else nn.Identity()
-        self.bn_e = nn.BatchNorm1d(out_dim, momentum=cfg.get("bn_momentum", 0.1)) if batch_norm else nn.Identity()
-        self.bn_v = nn.BatchNorm1d(out_dim, momentum=cfg.get("bn_momentum", 0.1)) if (self.update_nodes and batch_norm) else nn.Identity()
-
+        # FFN (pre-LN): The FFN expands from model_dim to hidden_dim (typically 4×) then projects back.
+        if layer_norm == True:
+            self.edge_layernorm_2 = nn.LayerNorm(self.model_dim)
+        else:
+            self.edge_layernorm_2 = nn.Identity()
+        hidden_mult = cfg.get("ffn_mult", 4)  # n set 2 if need d→2d→d
+        hidden_dim = self.model_dim * hidden_mult
         self.ffn = nn.Sequential(
-            nn.Linear(out_dim, out_dim * 2),
-            nn.ReLU() if act == 'relu' else nn.Identity(),
+            nn.Linear(self.model_dim, hidden_dim),
+            nn.GELU() if act == 'relu' else nn.GELU(),  # Graphormer uses GELU
             nn.Dropout(dropout),
-            nn.Linear(out_dim * 2, out_dim),
+            nn.Linear(hidden_dim, self.model_dim),
         )
+        self.drop_ffn = nn.Dropout(dropout)
 
-        self.norm_e2 = nn.LayerNorm(out_dim) if layer_norm else nn.Identity()
-        self.bn_e2 = nn.BatchNorm1d(out_dim, momentum=cfg.get("bn_momentum", 0.1)) if batch_norm else nn.Identity()
-        self.dropout = nn.Dropout(dropout)
+        # optional edge→node update (kept simple; pre-LN on nodes)
+        if layer_norm == True:
+            self.layernorm_node = nn.LayerNorm(self.model_dim)
+        else:
+            self.layernorm_node = nn.Identity()
+        self.edge_to_node_projection = nn.Linear(self.model_dim, self.model_dim)
 
     def forward(self, batch):
-        edge_in = batch.edge_attr
-        node_in = batch.x
-        num_edges = edge_in.shape[0]
+        # inputs
+        edge_in = self.proj_in(batch.edge_attr)          # (E, d)
+        node_in = batch.x                                # (N, d)   (assumed already at 'd')
 
-        # Edge self-attention
-        edge_attn_out, _ = self.attention(batch)          # (E, H, D)
-        edge_attn_out = edge_attn_out.view(num_edges, -1) # (E, out_dim)
-        edge_attn_out = self.O_e(edge_attn_out)
-        edge_attn_out = self.dropout(edge_attn_out)
+        E = edge_in.size(0)
+        edge_edge_index = getattr(batch, "edge_edge_index", None)
+        if edge_edge_index is None:
+            edge_edge_index = build_edge_edge_index(batch.edge_index, E, batch.num_nodes)
+            batch.edge_edge_index = edge_edge_index
 
-        edge_out = edge_in + edge_attn_out if self.residual else edge_attn_out
-        edge_out = self.norm_e(edge_out)
-        if isinstance(self.bn_e, nn.BatchNorm1d):
-            edge_out = self.bn_e(edge_out)
+        # Optional Graphormer additive bias on edge attention logits
+        # Expect shape (M, H); set to None if don't use it.
+        attn_bias = getattr(batch, "edge_edge_bias", None)
 
-        # Optional: edge->node aggregation (add to both endpoints if available)
+        # Eq. (8): h'_e = MHA(LN(h_e)) + h_e 
+        edge_residual = edge_in
+        edge_norm = self.edge_layernorm_1(edge_in)
+        edge_attn = self.attn_e(edge_norm, edge_edge_index, attn_bias=attn_bias)  # (E, d)
+        edge_attn = self.drop_attn(edge_attn)
+        updated_edge_features = edge_residual + edge_attn if self.residual else edge_attn
+
+        # Eq. (9): h_e = FFN(LN(h'_e)) + h'_e 
+        edge_residual_2 = updated_edge_features
+        edge_norm2 = self.edge_layernorm_2(updated_edge_features)
+        edge_ffn  = self.ffn(edge_norm2)
+        edge_ffn  = self.drop_ffn(edge_ffn)
+        edge_out = edge_residual_2 + edge_ffn if self.residual else edge_ffn
+
+        # Edge degree scaler
+        log_deg_e = get_edge_log_deg(batch)                             # (E,1)
+        mix = torch.stack([edge_out, edge_out * log_deg_e], dim=-1)     # (E,d,2)
+        edge_out = (mix * self.deg_coef_edges).sum(dim=-1)              # (E,d)
+
+        #  edge → node update (not part of Eq. 8–9)
         if self.update_nodes:
+            # aggregate updated edge embeddings to both endpoints (undirected)
             if hasattr(batch, "edge_index_undirected"):
-                u = batch.edge_index_undirected[0]
-                v = batch.edge_index_undirected[1]
-                node_out = torch.zeros_like(node_in)
-                # add each edge contribution to both endpoints (using same E length)
-                scatter_add(edge_out, u, dim=0, out=node_out)
-                scatter_add(edge_out, v, dim=0, out=node_out)
+                u, v = batch.edge_index_undirected
             else:
-                # Fallback: add to target only (consistent with GRIT’s destination aggregation)
-                node_out = torch.zeros_like(node_in)
-                scatter_add(edge_out, batch.edge_index[1], dim=0, out=node_out)
+                # if only directed is present, add to dst; duplicate for src if you want symmetry
+                u, v = batch.edge_index
 
-            node_out = self.O_v(node_out)
-            node_out = self.dropout(node_out)
-            node_out = node_in + node_out if self.residual else node_out
-            node_out = self.norm_v(node_out)
-            if isinstance(self.bn_v, nn.BatchNorm1d):
-                node_out = self.bn_v(node_out)
+            node_residual  = node_in
+            node_norm = self.layernorm_node(node_in)
+
+            # aggregate to endpoints
+            node_msg = torch.zeros_like(node_norm)
+            scatter_add(edge_out, u, dim=0, out=node_msg)
+            scatter_add(edge_out, v, dim=0, out=node_msg)
+
+            node_delta = self.edge_to_node_projection(node_msg)
+            node_out   = node_residual + node_delta if self.residual else node_delta
         else:
             node_out = node_in
 
-        # FFN on edges
-        edge_ffn = self.ffn(edge_out)
-        edge_ffn = self.dropout(edge_ffn)
-        edge_ffn = edge_out + edge_ffn if self.residual else edge_ffn
-        edge_ffn = self.norm_e2(edge_ffn)
-        if isinstance(self.bn_e2, nn.BatchNorm1d):
-            edge_ffn = self.bn_e2(edge_ffn)
-
-        batch.edge_attr = edge_ffn
+        batch.edge_attr = edge_out
         batch.x = node_out
         return batch
+
+@torch.no_grad()
+def get_edge_log_deg(batch, cache: bool = True) -> torch.Tensor:
+    """
+    Return log(1 + deg_e) for each edge token as shape (E, 1).
+    Priority:
+      1) batch.log_deg_e (cached)
+      2) batch.deg_e     (cached raw degree)
+      3) compute from batch.edge_edge_index (line-graph)
+    """
+    if hasattr(batch, "log_deg_e"):
+        log_deg_e = batch.log_deg_e
+    elif hasattr(batch, "deg_e"):
+        deg_e = batch.deg_e.squeeze(-1) if batch.deg_e.dim() == 2 else batch.deg_e
+        log_deg_e = torch.log1p(deg_e)
+        if cache:
+            batch.log_deg_e = log_deg_e
+    else:
+        e_ei = getattr(batch, "edge_edge_index", None)
+        if e_ei is None:
+            warnings.warn(
+                "Computing edge line-graph degrees on the fly; ensure edge_edge_index is deduplicated."
+            )
+            E = batch.edge_attr.size(0) if hasattr(batch, "edge_attr") else batch.edge_index.size(1)
+            e_ei = build_edge_edge_index(batch.edge_index, E, batch.num_nodes)
+            if cache:
+                batch.edge_edge_index = e_ei
+
+        _, dst_e = e_ei
+        E = batch.edge_attr.size(0) if hasattr(batch, "edge_attr") else int(dst_e.max().item()) + 1
+        ones = torch.ones_like(dst_e, dtype=torch.float)
+        deg_e = scatter_add(ones, dst_e, dim=0, dim_size=E)        # (E,)
+        log_deg_e = torch.log1p(deg_e)                              # (E,)
+        if cache:
+            batch.deg_e = deg_e
+            batch.log_deg_e = log_deg_e
+
+    return log_deg_e.view(-1, 1)  # (E,1)

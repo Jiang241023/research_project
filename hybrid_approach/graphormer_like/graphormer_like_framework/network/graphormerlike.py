@@ -12,20 +12,30 @@ class FeatureEncoder(nn.Module):
         super().__init__()
         self.dim_in = dim_in
         if cfg.dataset.node_encoder:
-            NodeEncoder = register.node_encoder_dict[cfg.dataset.node_encoder_name]
+            # Encode integer node features via nn.Embeddings
+            NodeEncoder = register.node_encoder_dict[
+                cfg.dataset.node_encoder_name]
             self.node_encoder = NodeEncoder(cfg.gnn.dim_inner)
-            self.node_encoder_bn = BatchNorm1dNode(
-                new_layer_config(cfg.gnn.dim_inner, -1, -1, has_act=False, has_bias=False, cfg=cfg)
-            ) if cfg.dataset.node_encoder_bn else nn.Identity()
+            if cfg.dataset.node_encoder_bn:
+                self.node_encoder_bn = BatchNorm1dNode(
+                    new_layer_config(cfg.gnn.dim_inner, -1, -1, has_act=False,
+                                     has_bias=False, cfg=cfg))
+            # Update dim_in to reflect the new dimension fo the node features
             self.dim_in = cfg.gnn.dim_inner
-
         if cfg.dataset.edge_encoder:
-            cfg.gnn.dim_edge = min(128, cfg.gnn.dim_inner) if 'PNA' in cfg.gt.layer_type else cfg.gnn.dim_inner
-            EdgeEncoder = register.edge_encoder_dict[cfg.dataset.edge_encoder_name]
+            # Hard-limit max edge dim for PNA.
+            if 'PNA' in cfg.gt.layer_type:
+                cfg.gnn.dim_edge = min(128, cfg.gnn.dim_inner)
+            else:
+                cfg.gnn.dim_edge = cfg.gnn.dim_inner
+            # Encode integer edge features via nn.Embeddings
+            EdgeEncoder = register.edge_encoder_dict[
+                cfg.dataset.edge_encoder_name]
             self.edge_encoder = EdgeEncoder(cfg.gnn.dim_edge)
-            self.edge_encoder_bn = BatchNorm1dNode(
-                new_layer_config(cfg.gnn.dim_edge, -1, -1, has_act=False, has_bias=False, cfg=cfg)
-            ) if cfg.dataset.edge_encoder_bn else nn.Identity()
+            if cfg.dataset.edge_encoder_bn:
+                self.edge_encoder_bn = BatchNorm1dNode(
+                    new_layer_config(cfg.gnn.dim_edge, -1, -1, has_act=False,
+                                     has_bias=False, cfg=cfg))
 
     def forward(self, batch):
         for m in self.children():
@@ -55,20 +65,17 @@ class GraphormerEdgeTransformer(nn.Module):
                 out_dim=cfg.gt.dim_hidden,
                 num_heads=cfg.gt.n_heads,
                 dropout=cfg.gt.dropout,
-                act=cfg.gnn.act,
                 attn_dropout=cfg.gt.attn_dropout,
                 layer_norm=cfg.gt.layer_norm,
                 batch_norm=cfg.gt.batch_norm,
                 residual=True,
-                # extra kwargs tolerated by the layer's **kwargs
-                norm_e=cfg.gt.attn.get("norm_e", True),
-                O_e=cfg.gt.attn.get("O_e", True),
+                act=cfg.gnn.act,
+                update_nodes=cfg.gt.get("update_nodes", True),
                 cfg=cfg.gt,
             ))
         self.layers = nn.Sequential(*layers)
 
-        # IMPORTANT: head must output 3 channels for (dx, dy, dz)
-        GNNHead = register.head_dict[cfg.gnn.head]  # 'node' for node-level labels
+        GNNHead = register.head_dict[cfg.gnn.head]  
         self.post_mp = GNNHead(dim_in=cfg.gnn.dim_inner, dim_out=dim_out)
 
     def forward(self, batch):

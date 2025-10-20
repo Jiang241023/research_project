@@ -17,7 +17,7 @@ dataset:
   node_encoder_name: DegreeCentrality
   node_encoder_bn: False
   edge_encoder: True
-  edge_encoder_name: EdgeCentrality
+  edge_encoder_name: LFPE_Edge
   edge_encoder_bn: False
   pe_transform_on_the_fly: True
   max_samples: 512
@@ -77,7 +77,7 @@ gnn:
   dim_inner: 64
   dim_out: 3
   batchnorm: True
-  act: relu
+  act: Gelu
   dropout: 0.0
   
 
