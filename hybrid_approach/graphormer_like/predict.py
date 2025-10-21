@@ -3,14 +3,14 @@ import numpy as np
 import torch
 from torch_geometric.loader import DataLoader
 from argparse import Namespace
-
+import torch
+import torch.nn as nn
 import graphormer_like_framework  
 from graphormer_like_framework.loader.dataset.ddacs_npy_stream import DDACSNPYStream
 from torch_geometric.graphgym.config import set_cfg, load_cfg, cfg
 from torch_geometric.graphgym.model_builder import create_model
 from torch_geometric.utils import degree
-
-from torch_geometric.utils import degree
+from torch_geometric.graphgym.register import act_dict
 
 def _laplacian_apply(y, edge_index, num_nodes, edge_weight=None):
     """Compute (D - A) @ y."""
@@ -79,6 +79,7 @@ def infer(data_dir, ckpt_path, cfg_path, out_dir, device='cuda:0', batch_size=8)
     set_cfg(cfg)
     cfg.set_new_allowed(True)
     load_cfg(cfg,  Namespace(cfg_file=cfg_path, opts=[])) # load_cfg is written to accept something that looks like args = argparse.Namespace(...)
+    act_dict['Gelu'] = nn.GELU
     model = create_model()
     model = load_checkpoint(model, ckpt_path, torch.device(device))
 

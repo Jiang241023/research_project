@@ -68,9 +68,6 @@ def build_edge_edge_index(edge_index, num_edges, num_nodes):
 class Attention(nn.Module):
     """
     Multi-head scaled dot-product attention over edge tokens.
-      - x_e:   (E, in_dim)
-      - e_ei:  (2, M)  (src_edge -> dst_edge)
-      - attn_bias: optional (M, H) or broadcastable
     Returns: (E, embed_dim)
     """
     def __init__(self, in_dim, embed_dim, num_heads, bias=True, attn_dropout=0):
@@ -130,7 +127,7 @@ class Attention(nn.Module):
 @register_layer("GraphormerEdge")
 class GraphormerEdgeLayer(nn.Module):
     """
-    Pre-LN Transformer layer on EDGE tokens (line graph), optional edge→node update.
+    Pre-LN Transformer layer on EDGE tokens (line graph), edge→node update.
 
     Equations (edge stream):
       h'_e = MHA(LN(h_e)) + h_e
@@ -179,7 +176,7 @@ class GraphormerEdgeLayer(nn.Module):
         )
         self.drop_ffn = nn.Dropout(dropout)
 
-        # optional edge→node update (kept simple; pre-LN on nodes)
+        # edge→node update 
         if layer_norm == True:
             self.layernorm_node = nn.LayerNorm(self.model_dim)
         else:
@@ -206,39 +203,48 @@ class GraphormerEdgeLayer(nn.Module):
         edge_norm = self.edge_layernorm_1(edge_in)
         edge_attn = self.attn_e(edge_norm, edge_edge_index, attn_bias=attn_bias)  # (E, d)
         edge_attn = self.drop_attn(edge_attn)
-        updated_edge_features = edge_residual + edge_attn if self.residual else edge_attn
+        if self.residual:
+            updated_edge_features = edge_residual + edge_attn
+        else:
+            updated_edge_features = edge_attn
 
         # Eq. (9): h_e = FFN(LN(h'_e)) + h'_e 
         edge_residual_2 = updated_edge_features
         edge_norm2 = self.edge_layernorm_2(updated_edge_features)
         edge_ffn  = self.ffn(edge_norm2)
         edge_ffn  = self.drop_ffn(edge_ffn)
-        edge_out = edge_residual_2 + edge_ffn if self.residual else edge_ffn
+        if self.residual:
+            edge_out = edge_residual_2 + edge_ffn
+        else:
+            edge_out = edge_ffn
 
         # Edge degree scaler
         log_deg_e = get_edge_log_deg(batch)                             # (E,1)
-        mix = torch.stack([edge_out, edge_out * log_deg_e], dim=-1)     # (E,d,2)
-        edge_out = (mix * self.deg_coef_edges).sum(dim=-1)              # (E,d)
+        h = torch.stack([edge_out, edge_out * log_deg_e], dim=-1)     # (E,d,2)
+        edge_out = (h * self.deg_coef_edges).sum(dim=-1)              # (E,d)
 
-        #  edge → node update (not part of Eq. 8–9)
+        #  edge → node update 
         if self.update_nodes:
             # aggregate updated edge embeddings to both endpoints (undirected)
             if hasattr(batch, "edge_index_undirected"):
-                u, v = batch.edge_index_undirected
+                node_i, node_j = batch.edge_index_undirected
             else:
                 # if only directed is present, add to dst; duplicate for src if you want symmetry
-                u, v = batch.edge_index
+                node_i, node_j = batch.edge_index
 
             node_residual  = node_in
             node_norm = self.layernorm_node(node_in)
 
-            # aggregate to endpoints
+            # Aggregate updated edge embeddings to both endpoints
             node_msg = torch.zeros_like(node_norm)
-            scatter_add(edge_out, u, dim=0, out=node_msg)
-            scatter_add(edge_out, v, dim=0, out=node_msg)
+            scatter_add(edge_out, node_i, dim=0, out=node_msg) # sum to i
+            scatter_add(edge_out, node_j, dim=0, out=node_msg) # sum to j
 
             node_delta = self.edge_to_node_projection(node_msg)
-            node_out   = node_residual + node_delta if self.residual else node_delta
+            if self.residual:
+                node_out = node_residual + node_delta
+            else: 
+                node_out = node_delta
         else:
             node_out = node_in
 
@@ -247,7 +253,7 @@ class GraphormerEdgeLayer(nn.Module):
         return batch
 
 @torch.no_grad()
-def get_edge_log_deg(batch, cache: bool = True) -> torch.Tensor:
+def get_edge_log_deg(batch, cache= True):
     """
     Return log(1 + deg_e) for each edge token as shape (E, 1).
     Priority:
@@ -263,17 +269,17 @@ def get_edge_log_deg(batch, cache: bool = True) -> torch.Tensor:
         if cache:
             batch.log_deg_e = log_deg_e
     else:
-        e_ei = getattr(batch, "edge_edge_index", None)
-        if e_ei is None:
+        edge_edge_index = getattr(batch, "edge_edge_index", None)
+        if edge_edge_index is None:
             warnings.warn(
                 "Computing edge line-graph degrees on the fly; ensure edge_edge_index is deduplicated."
             )
             E = batch.edge_attr.size(0) if hasattr(batch, "edge_attr") else batch.edge_index.size(1)
-            e_ei = build_edge_edge_index(batch.edge_index, E, batch.num_nodes)
+            edge_edge_index = build_edge_edge_index(batch.edge_index, E, batch.num_nodes)
             if cache:
-                batch.edge_edge_index = e_ei
+                batch.edge_edge_index = edge_edge_index
 
-        _, dst_e = e_ei
+        _, dst_e = edge_edge_index
         E = batch.edge_attr.size(0) if hasattr(batch, "edge_attr") else int(dst_e.max().item()) + 1
         ones = torch.ones_like(dst_e, dtype=torch.float)
         deg_e = scatter_add(ones, dst_e, dim=0, dim_size=E)        # (E,)
