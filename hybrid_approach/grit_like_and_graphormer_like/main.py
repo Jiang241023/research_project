@@ -6,8 +6,8 @@ if ROOT not in sys.path:
 import torch
 import logging
 
-import grit_like_framework  # noqa, register custom modules
-from grit_like_framework.optimizer.extra_optimizers import ExtendedSchedulerConfig
+import framework  # noqa, register custom modules
+from framework.optimizer.extra_optimizers import ExtendedSchedulerConfig
 
 from torch_geometric.graphgym.cmd_args import parse_args
 from torch_geometric.graphgym.config import (cfg, dump_cfg,
@@ -26,9 +26,9 @@ from torch_geometric.graphgym.utils.device import auto_select_device
 from torch_geometric.graphgym.register import train_dict
 from torch_geometric import seed_everything
 
-from grit_like_framework.finetuning import load_pretrained_model_cfg, \
+from framework.finetuning import load_pretrained_model_cfg, \
     init_model_from_pretrained
-from grit_like_framework.logger import create_logger
+from framework.logger import create_logger
 
 
 def new_optimizer_config(cfg):
@@ -196,3 +196,4 @@ if __name__ == '__main__':
 
 
 #python main.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression.yaml  wandb.use False accelerator "cuda:0" optim.max_epoch 5 seed 41 dataset.dir '/mnt/data/jiang'
+#python main.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression-graphormerlike.yaml  wandb.use False accelerator "cuda:0" optim.max_epoch 5 seed 41 dataset.dir '/mnt/data/jiang'

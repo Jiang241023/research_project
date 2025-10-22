@@ -4,8 +4,8 @@ import torch
 from torch_geometric.loader import DataLoader
 from argparse import Namespace
 
-import grit_like_framework  
-from grit_like_framework.loader.dataset.ddacs_npy_stream import DDACSNPYStream
+import framework  
+from framework.loader.dataset.ddacs_npy_stream import DDACSNPYStream
 from torch_geometric.graphgym.config import set_cfg, load_cfg, cfg
 from torch_geometric.graphgym.model_builder import create_model
 from torch_geometric.utils import degree

@@ -14,8 +14,8 @@ from torch_geometric.graphgym.logger import infer_task, Logger
 from torch_geometric.graphgym.utils.io import dict_to_json, dict_to_tb
 from torchmetrics.functional import auroc
 
-import grit_like_framework.metrics_ogb as metrics_ogb
-from grit_like_framework.metric_wrapper import MetricWrapper
+import framework.metrics_ogb as metrics_ogb
+from framework.metric_wrapper import MetricWrapper
 
 
 def accuracy_SBM(targets, pred_int):

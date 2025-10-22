@@ -6,7 +6,7 @@ import torch_geometric as pyg
 from torch_geometric.utils.num_nodes import maybe_num_nodes
 from torch_scatter import scatter, scatter_max, scatter_add
 
-from grit_like_framework.utils import negate_edge_index
+from framework.utils import negate_edge_index
 from torch_geometric.graphgym.register import *
 import opt_einsum as oe
 
