@@ -4,6 +4,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if ROOT not in sys.path:
     sys.path.append(ROOT)
 import torch
+import torch.nn as nn
 import logging
 
 import framework  # noqa, register custom modules
@@ -29,7 +30,7 @@ from torch_geometric import seed_everything
 from framework.finetuning import load_pretrained_model_cfg, \
     init_model_from_pretrained
 from framework.logger import create_logger
-
+from torch_geometric.graphgym.register import act_dict
 
 def new_optimizer_config(cfg):
     return OptimizerConfig(optimizer=cfg.optim.optimizer,
@@ -158,6 +159,7 @@ if __name__ == '__main__':
         # Set machine learning pipeline
         loaders = create_loader()
         loggers = create_logger()
+        act_dict['Gelu'] = nn.GELU
         model = create_model()
         if cfg.pretrained.dir:
             model = init_model_from_pretrained(
