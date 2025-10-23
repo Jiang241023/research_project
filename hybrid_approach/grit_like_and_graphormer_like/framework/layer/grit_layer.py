@@ -170,7 +170,6 @@ class GritTransformerLayer(nn.Module):
         self.layer_norm = layer_norm
         self.batch_norm = batch_norm
 
-        # -------
         self.update_e = cfg.get("update_e", True)
         self.bn_momentum = cfg.bn_momentum
         self.bn_no_runner = cfg.bn_no_runner

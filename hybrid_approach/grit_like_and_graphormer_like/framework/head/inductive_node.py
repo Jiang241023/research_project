@@ -3,7 +3,6 @@ from torch_geometric.graphgym.config import cfg
 from torch_geometric.graphgym.models.layer import new_layer_config, MLP
 from torch_geometric.graphgym.register import register_head
 
-
 @register_head('inductive_node')
 class GNNInductiveNodeHead(nn.Module):
     """

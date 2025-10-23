@@ -153,7 +153,56 @@ def compute_edge_features(edge_index, edge2tris, repeated_elem_feats):
     #print(f"edge_features: {edge_features}")
     #print(f"the shape of edge_features:\n {edge_features.shape}")
     return edge_features
-    
+
+def build_edge_edge_index(edge_index: np.ndarray, num_nodes: int = None) -> np.ndarray:
+    """
+    Build line-graph connectivity over edges: connect two *edges* if they share a node.
+    Outputs a directed list (both directions) with dtype int64 and shape (M, 2).
+
+    Args:
+        edge_index : (E, 2) int64, undirected unique edges (i<j is fine).
+        num_nodes  : optional; inferred from edge_index if None.
+
+    Returns:
+        edge_edge_index : (M, 2) int64 — pairs (e_i -> e_j) whenever edges e_i, e_j
+                          share at least one endpoint. No self-loops. Duplicates removed.
+    """
+    edge_index = np.asarray(edge_index, dtype=np.int64)
+    if edge_index.size == 0:
+        return np.empty((0, 2), dtype=np.int64)
+
+    if num_nodes is None:
+        num_nodes = int(edge_index.max()) + 1
+
+    # For each node, collect incident edge IDs
+    incident = [[] for _ in range(num_nodes)]
+    for e_id, (u, v) in enumerate(edge_index):
+        incident[u].append(e_id)
+        incident[v].append(e_id)
+
+    src, dst = [], []
+    # For each node's incident edge list, fully connect the edges (both directions)
+    for edges_at_node in incident:
+        d = len(edges_at_node)
+        if d < 2:
+            continue
+        # all unordered pairs, then add both directions
+        for i in range(d - 1):
+            ei = edges_at_node[i]
+            for j in range(i + 1, d):
+                ej = edges_at_node[j]
+                if ei != ej:
+                    src.append(ei); dst.append(ej)
+                    src.append(ej); dst.append(ei)
+
+    if not src:
+        return np.empty((0, 2), dtype=np.int64)
+
+    e2e = np.column_stack([np.asarray(src, dtype=np.int64),
+                           np.asarray(dst, dtype=np.int64)])
+    # Deduplicate (may occur if the same pair appears via two different nodes)
+    e2e = np.unique(e2e, axis=0)
+    return e2e
 
 def prepare_sample(h5_path, component="blank", op_form=10, timestep=3):
     # 1) per-element features (m=11025) → per-triangle features (2m=22050)
@@ -175,16 +224,18 @@ def prepare_sample(h5_path, component="blank", op_form=10, timestep=3):
 
     # 5) EDGE INDEX + EDGE FEATURES (no degrees needed)
     edge_index, edge2tris = build_edges_from_triangles(triangles)                                  # (E,2), list-of-lists
-    edge_features = compute_edge_features(edge_index, edge2tris, repeated_elem_feats)              # (E,31)
-    edge_index_2 = np.arange(edge_index.shape[0], dtype=np.int64)          # (E,)
+    # edge_features = compute_edge_features(edge_index, edge2tris, repeated_elem_feats)              # (E,31)
+    # edge_index_2 = np.arange(edge_index.shape[0], dtype=np.int64)          # (E,)
+    edge_edge_index = build_edge_edge_index(edge_index)                         # (M,2)
 
-    return (new_concatenated_features.astype(np.float32),
-            node_displacement,
+    return (#new_concatenated_features.astype(np.float32),
+            # node_displacement,
             edge_index.astype(np.int64),
-            edge_features.astype(np.float32),
-            node_coords,
-            node_index,
-            edge_index_2)
+            # edge_features.astype(np.float32),
+            # node_coords,
+            # node_index,
+            # edge_index_2,
+            edge_edge_index)
 
 # set random seed
 torch.manual_seed(0)
@@ -197,7 +248,7 @@ dataset = DDACSDataset(data_dir, "h5")
 print(f"Loaded {len(dataset)} simulations")
 
 # Add the save path
-OUT_DIR = Path("/mnt/data/jiang/subsample")
+OUT_DIR = Path("/mnt/data/jiang/")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Save or check samples
@@ -211,25 +262,27 @@ def features_per_sample(ddacs, out_dir: Path, action="save_npy"):
             sample_id, _, h5_path = ddacs[i]
 
             # your existing extractor
-            new_concatenated_features, node_displacement, edge_index, edge_features, node_coordinates, node_index, edge_index_2 = prepare_sample(h5_path)
-            # edge_index, edge_index_2 = prepare_sample(h5_path)
+            # new_concatenated_features, node_displacement, edge_index, edge_features, node_coordinates, node_index, edge_index_2, edge_edge_index = prepare_sample(h5_path)
+            edge_index, edge_edge_index = prepare_sample(h5_path)
             # cast dtypes explicitly
-            X  = new_concatenated_features.astype(np.float32)    # (N, 34)
-            Y  = node_displacement.astype(np.float32)    # (N, 3)
-            EI = edge_index.astype(np.int64)      # (E, 2)
-            EF = edge_features.astype(np.float32) # (E, 31)
-            node_coords = node_coordinates.astype(np.float32) 
-            node_index = node_index.astype(np.int64)
-            EI_2 = edge_index_2.astype(np.int64)      # (E, )
+            # X  = new_concatenated_features.astype(np.float32)    # (N, 34)
+            # Y  = node_displacement.astype(np.float32)    # (N, 3)
+            # EI = edge_index.astype(np.int64)      # (E, 2)
+            # EF = edge_features.astype(np.float32) # (E, 31)
+            # node_coords = node_coordinates.astype(np.float32) 
+            # node_index = node_index.astype(np.int64)
+            # EI_2 = edge_index_2.astype(np.int64)      # (E, )
+            EEI = edge_edge_index.astype(np.int64)
 
-            # save 5 arrays as separate .npy files
-            np.save(out_dir / f"{sample_id}_new_concatenated_features.npy",  X)
-            np.save(out_dir / f"{sample_id}_node_displacement.npy",  Y)
-            np.save(out_dir / f"{sample_id}_edge_index.npy", EI)
-            np.save(out_dir / f"{sample_id}_edge_features.npy", EF)
-            np.save(out_dir / f"{sample_id}_node_coords.npy", node_coords)
-            np.save(out_dir / f"{sample_id}_node_index.npy", node_index)
-            np.save(out_dir / f"{sample_id}_edge_index_2.npy", EI_2)
+            # save arrays as separate .npy files
+            # np.save(out_dir / f"{sample_id}_new_concatenated_features.npy",  X)
+            # np.save(out_dir / f"{sample_id}_node_displacement.npy",  Y)
+            # np.save(out_dir / f"{sample_id}_edge_index.npy", EI)
+            # np.save(out_dir / f"{sample_id}_edge_features.npy", EF)
+            # np.save(out_dir / f"{sample_id}_node_coords.npy", node_coords)
+            # np.save(out_dir / f"{sample_id}_node_index.npy", node_index)
+            # np.save(out_dir / f"{sample_id}_edge_index_2.npy", EI_2)
+            np.save(out_dir / f"{sample_id}_edge_edge_index.npy", EEI)
 
         total_time = time.perf_counter() - t0
         print("\n=== Save summary ===")
@@ -246,6 +299,7 @@ def features_per_sample(ddacs, out_dir: Path, action="save_npy"):
         node_coords = np.load(out_dir / f"{sample_to_check}_node_coords.npy")
         node_index = np.load(out_dir / f"{sample_to_check}_node_index.npy")
         EI_2 = np.load(out_dir / f"{sample_to_check}_edge_index_2.npy")
+        EEI = np.load(out_dir / f"{sample_id}_edge_edge_index.npy")
         print("-----------------------------------")
         print(f"For sample {sample_to_check} (NPY set):")
         print("-----------------------------------")
@@ -255,10 +309,11 @@ def features_per_sample(ddacs, out_dir: Path, action="save_npy"):
         print(f"edge_features[0]:\n{EF[0]}")
         print(f"node_coords[0]:\n{node_coords[0]}")
         print(f"node_index[0]:\n{node_index[0]}")
-        print(f"edge_index_2[0]: {EI_2[0]}")         
+        print(f"edge_index_2[0]: {EI_2[0]}")  
+        print(f"edge_edge_index[0]: {EEI[0]}")       
 
     else:
         print("action must be one of: 'save_npy', 'check_npy'")
 
 # Run it
-features_per_sample(dataset, OUT_DIR, action="check_npy")
+features_per_sample(dataset, OUT_DIR, action="save_npy")

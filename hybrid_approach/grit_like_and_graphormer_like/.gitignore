@@ -182,7 +182,7 @@ marimo/_lsp/
 __marimo__/
 
 # result
-hybrid_approach/grit_like/prediction
+hybrid_approach/grit_like_and_graphormer_like/prediction
 
 # figures
 /home/RUS_CIP/st186731/research_project/figures
