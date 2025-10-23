@@ -11,8 +11,6 @@ from torch_geometric.graphgym.register import register_loader
 
 from framework.loader.split_generator import (#prepare_splits,
                                          set_dataset_splits)
-from framework.transform.posenc_stats import compute_posenc_stats, ComputePosencStat
-from framework.transform.transforms import pre_transform_in_memory
 
 from framework.loader.dataset.ddacs_npy_stream import DDACSNPYStream
 
@@ -116,54 +114,6 @@ def load_dataset_master(format, name, dataset_dir):
 
     # Log a quick summary (safe for streaming datasets)
     log_loaded_dataset(dataset, format, name)
-
-    # Positional encodings: precompute stats or attach on-the-fly
-    pe_enabled_list = []
-    for key, pecfg in cfg.items():
-        if key.startswith('posenc_') and getattr(pecfg, 'enable', False):
-            pe_name = key.split('_', 1)[1]
-            pe_enabled_list.append(pe_name)
-            if hasattr(pecfg, 'kernel'):
-                if getattr(pecfg.kernel, 'times_func', None):
-                    pecfg.kernel.times = list(eval(pecfg.kernel.times_func))
-                logging.info(f"Parsed {pe_name} PE kernel times / steps: {pecfg.kernel.times}")
-
-    if pe_enabled_list:
-        start = time.perf_counter()
-        logging.info(f"Precomputing Positional Encoding statistics: {pe_enabled_list} for all graphs...")
-
-        # Avoid dataset[:10] (not supported by all Datasets). Probe first k items.
-        probe_n = min(10, len(dataset))
-        is_undirected = all(dataset[i].is_undirected() for i in range(probe_n))
-        logging.info(f"  ...estimated to be undirected: {is_undirected}")
-
-        if not getattr(cfg.dataset, 'pe_transform_on_the_fly', False):
-            pre_transform_in_memory(
-                dataset,
-                partial(
-                    compute_posenc_stats,
-                    pe_types=pe_enabled_list,
-                    is_undirected=is_undirected,
-                    cfg=cfg,
-                ),
-                show_progress=True,
-                cfg=cfg,
-                posenc_mode=True,
-            )
-            elapsed = time.perf_counter() - start
-            timestr = time.strftime('%H:%M:%S', time.gmtime(elapsed)) + f'{elapsed:.2f}'[-3:]
-            logging.info(f"Done! Took {timestr}")
-        else:
-            warnings.warn('PE transform on the fly to save memory consumption; experimental, please only use for RWSE/RWPSE')
-            pe_transform = ComputePosencStat(
-                pe_types=pe_enabled_list,
-                is_undirected=is_undirected,
-                cfg=cfg
-            )
-            if dataset.transform is None:
-                dataset.transform = pe_transform
-            else:
-                dataset.transform = T.compose([pe_transform, dataset.transform])
 
     return dataset
 
