@@ -15,7 +15,7 @@ def set_cfg_gt(cfg):
 
     # Type of Graph Transformer layer to use
     # cfg.gt.layer_type = 'SANLayer'
-    cfg.gt.layer_type = 'GritTransformer'
+    cfg.gt.layer_type = 'None'
 
     # Number of Transformer layers in the model
     cfg.gt.layers = 3
@@ -23,17 +23,6 @@ def set_cfg_gt(cfg):
     cfg.gt.n_heads = 8
     # Size of the hidden node and edge representation
     cfg.gt.dim_hidden = 64
-
-    # Full attention SAN transformer including all possible pairwise edges
-    cfg.gt.full_graph = True
-
-    # SAN real vs fake edge attention weighting coefficient
-    cfg.gt.gamma = 1e-5
-
-    # Histogram of in-degrees of nodes in the training set used by PNAConv.
-    # Used when `gt.layer_type: PNAConv+...`. If empty it is precomputed during
-    # the dataset loading process.
-    cfg.gt.pna_degrees = []
 
     # Dropout in feed-forward module.
     cfg.gt.dropout = 0.0

@@ -12,8 +12,3 @@ def dataset_cfg(cfg):
     # The number of edge types to expect in TypeDictEdgeEncoder.
     cfg.dataset.edge_encoder_num_types = 0
 
-    # VOC/COCO Superpixels dataset version based on SLIC compactness parameter.
-    cfg.dataset.slic_compactness = 10
-
-    # ----- PE Transform ---------------
-    cfg.dataset.pe_transform_on_the_fly = False
