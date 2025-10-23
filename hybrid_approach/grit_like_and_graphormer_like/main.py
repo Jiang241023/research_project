@@ -198,4 +198,4 @@ if __name__ == '__main__':
 
 
 #python main.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression.yaml  wandb.use False accelerator "cuda:0" optim.max_epoch 5 seed 41 dataset.dir '/mnt/data/jiang'
-#python main.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression-graphormerlike.yaml  wandb.use False accelerator "cuda:0" optim.max_epoch 5 seed 41 dataset.dir '/mnt/data/jiang'
+#python main.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression-graphormerlike.yaml  wandb.use False accelerator "cuda:0" optim.max_epoch 10 seed 41 dataset.dir '/mnt/data/jiang'

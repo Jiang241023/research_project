@@ -30,6 +30,7 @@ def _paths_for_id(root, sid):
         "edge_attr":    os.path.join(root, f"{sid}_edge_features.npy"),
         "edge_index_2": os.path.join(root, f"{sid}_edge_index_2.npy"),
         "node_index":   os.path.join(root, f"{sid}_node_index.npy"),
+        "edge_edge_index":   os.path.join(root, f"{sid}_edge_edge_index.npy"),
     }
 
 class DDACSNPYStream(Dataset):
@@ -66,6 +67,7 @@ class DDACSNPYStream(Dataset):
 
         ei  = torch.from_numpy(np.load(P["edge_index"]).astype(np.int64))
         ea  = torch.from_numpy(np.load(P["edge_attr"]).astype(np.float32))
+        eei = torch.from_numpy(np.load(P["edge_edge_index"]).astype(np.int64))
 
         d = Data(
             x=x,
@@ -73,6 +75,7 @@ class DDACSNPYStream(Dataset):
             y=y,
             edge_index=ei.t().contiguous(),
             edge_attr=ea,
+            eei = eei
         )
         if os.path.exists(P["edge_index_2"]):
             ei2 = torch.from_numpy(np.load(P["edge_index_2"]).astype(np.int64))

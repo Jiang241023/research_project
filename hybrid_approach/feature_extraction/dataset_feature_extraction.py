@@ -224,17 +224,17 @@ def prepare_sample(h5_path, component="blank", op_form=10, timestep=3):
 
     # 5) EDGE INDEX + EDGE FEATURES (no degrees needed)
     edge_index, edge2tris = build_edges_from_triangles(triangles)                                  # (E,2), list-of-lists
-    # edge_features = compute_edge_features(edge_index, edge2tris, repeated_elem_feats)              # (E,31)
-    # edge_index_2 = np.arange(edge_index.shape[0], dtype=np.int64)          # (E,)
+    edge_features = compute_edge_features(edge_index, edge2tris, repeated_elem_feats)              # (E,31)
+    edge_index_2 = np.arange(edge_index.shape[0], dtype=np.int64)          # (E,)
     edge_edge_index = build_edge_edge_index(edge_index)                         # (M,2)
 
-    return (#new_concatenated_features.astype(np.float32),
-            # node_displacement,
+    return (new_concatenated_features.astype(np.float32),
+            node_displacement,
             edge_index.astype(np.int64),
-            # edge_features.astype(np.float32),
-            # node_coords,
-            # node_index,
-            # edge_index_2,
+            edge_features.astype(np.float32),
+            node_coords,
+            node_index,
+            edge_index_2,
             edge_edge_index)
 
 # set random seed
@@ -262,26 +262,26 @@ def features_per_sample(ddacs, out_dir: Path, action="save_npy"):
             sample_id, _, h5_path = ddacs[i]
 
             # your existing extractor
-            # new_concatenated_features, node_displacement, edge_index, edge_features, node_coordinates, node_index, edge_index_2, edge_edge_index = prepare_sample(h5_path)
-            edge_index, edge_edge_index = prepare_sample(h5_path)
+            new_concatenated_features, node_displacement, edge_index, edge_features, node_coordinates, node_index, edge_index_2, edge_edge_index = prepare_sample(h5_path)
+            # edge_index, edge_edge_index = prepare_sample(h5_path)
             # cast dtypes explicitly
-            # X  = new_concatenated_features.astype(np.float32)    # (N, 34)
-            # Y  = node_displacement.astype(np.float32)    # (N, 3)
-            # EI = edge_index.astype(np.int64)      # (E, 2)
-            # EF = edge_features.astype(np.float32) # (E, 31)
-            # node_coords = node_coordinates.astype(np.float32) 
-            # node_index = node_index.astype(np.int64)
-            # EI_2 = edge_index_2.astype(np.int64)      # (E, )
+            X  = new_concatenated_features.astype(np.float32)    # (N, 34)
+            Y  = node_displacement.astype(np.float32)    # (N, 3)
+            EI = edge_index.astype(np.int64)      # (E, 2)
+            EF = edge_features.astype(np.float32) # (E, 31)
+            node_coords = node_coordinates.astype(np.float32) 
+            node_index = node_index.astype(np.int64)
+            EI_2 = edge_index_2.astype(np.int64)      # (E, )
             EEI = edge_edge_index.astype(np.int64)
 
             # save arrays as separate .npy files
-            # np.save(out_dir / f"{sample_id}_new_concatenated_features.npy",  X)
-            # np.save(out_dir / f"{sample_id}_node_displacement.npy",  Y)
-            # np.save(out_dir / f"{sample_id}_edge_index.npy", EI)
-            # np.save(out_dir / f"{sample_id}_edge_features.npy", EF)
-            # np.save(out_dir / f"{sample_id}_node_coords.npy", node_coords)
-            # np.save(out_dir / f"{sample_id}_node_index.npy", node_index)
-            # np.save(out_dir / f"{sample_id}_edge_index_2.npy", EI_2)
+            np.save(out_dir / f"{sample_id}_new_concatenated_features.npy",  X)
+            np.save(out_dir / f"{sample_id}_node_displacement.npy",  Y)
+            np.save(out_dir / f"{sample_id}_edge_index.npy", EI)
+            np.save(out_dir / f"{sample_id}_edge_features.npy", EF)
+            np.save(out_dir / f"{sample_id}_node_coords.npy", node_coords)
+            np.save(out_dir / f"{sample_id}_node_index.npy", node_index)
+            np.save(out_dir / f"{sample_id}_edge_index_2.npy", EI_2)
             np.save(out_dir / f"{sample_id}_edge_edge_index.npy", EEI)
 
         total_time = time.perf_counter() - t0
@@ -299,7 +299,7 @@ def features_per_sample(ddacs, out_dir: Path, action="save_npy"):
         node_coords = np.load(out_dir / f"{sample_to_check}_node_coords.npy")
         node_index = np.load(out_dir / f"{sample_to_check}_node_index.npy")
         EI_2 = np.load(out_dir / f"{sample_to_check}_edge_index_2.npy")
-        EEI = np.load(out_dir / f"{sample_id}_edge_edge_index.npy")
+        EEI = np.load(out_dir / f"{sample_to_check}_edge_edge_index.npy")
         print("-----------------------------------")
         print(f"For sample {sample_to_check} (NPY set):")
         print("-----------------------------------")
@@ -315,5 +315,6 @@ def features_per_sample(ddacs, out_dir: Path, action="save_npy"):
     else:
         print("action must be one of: 'save_npy', 'check_npy'")
 
-# Run it
-features_per_sample(dataset, OUT_DIR, action="save_npy")
+if __name__ == '__main__':
+    # Run it
+    features_per_sample(dataset, OUT_DIR, action="check_npy")

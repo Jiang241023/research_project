@@ -17,53 +17,35 @@ def pyg_softmax(src, index, num_nodes=None):
     out_sum = scatter_add(out, index, dim=0, dim_size=num_nodes)[index] + 1e-16
     return out / out_sum
 
-# Treat every original edge as a token/node, and connect two edge-tokens if their original edges share a node
-def build_edge_edge_index(edge_index, num_edges, num_nodes):
-    """Line-graph connectivity (edge→edge) if two edges share a node."""
+def resolve_e2e(batch, E: int, device=None):
+    """
+    Return (src_e, dst_e) as 1D LongTensors on `device`.
+    Accepts either:
+      • batch.edge_edge_index with shape (2, M)  OR
+      • batch.eei with shape (M, 2)  (your saved format)
+    """
+    e2e = None
+    if hasattr(batch, "edge_edge_index"):
+        e2e = batch.edge_edge_index
+    elif hasattr(batch, "eei"):
+        e2e = batch.eei
+        # if (M,2), transpose to (2,M)
+        if e2e.dim() == 2 and e2e.size(1) == 2:
+            e2e = e2e.t().contiguous()
+    else:
+        # make an empty (2,0) index on the right device
+        z = torch.empty(2, 0, dtype=torch.long, device=device)
+        return z[0], z[1]
 
-    # Extract the source/target arrays and keep E handy.
-    device = edge_index.device
-    E = num_edges
-    src, dst = edge_index
+    if device is None:
+        device = getattr(e2e, "device", None)
+    e2e = e2e.to(device=device, dtype=torch.long)
 
-    # Make a list of half-edges appearing twice—once at its source node and once at its destination node.
-    nodes = torch.cat([src, dst], dim=0)                          # (2E,) nodes[k] is the node id of half-edge k; eids[k] tells which original edge that half-edge belongs to.
-    edge_ids  = torch.cat([torch.arange(E, device=device),
-                       torch.arange(E, device=device)], 0)        # (2E,) Make a list of half-edges
+    assert e2e.dim() == 2 and e2e.size(0) == 2, \
+        f"edge-edge index must be (2, M); got {tuple(e2e.size())}"
+    src_e, dst_e = e2e[0], e2e[1]
 
-    # Sort them by node id so that all half-edges incident to the same node are contiguous.
-    order = torch.argsort(nodes)
-    nodes_sorted = nodes[order]
-    edge_ids_sorted  = edge_ids[order]
-    _, counts = torch.unique_consecutive(nodes_sorted, return_counts=True) # counts gives, for each node (in ascending order), how many incident half-edges it has.
-
-    # This encodes “two edges are adjacent if they share this node.”
-    e_row, e_col = [], []
-    start = 0
-    for c in counts.tolist():
-        if c > 1:
-            group = edge_ids_sorted[start:start + c]
-            g1 = group.repeat_interleave(c)
-            g2 = group.repeat(c)
-            mask = g1 != g2
-            e_row.append(g1[mask])
-            e_col.append(g2[mask])
-        start += c
-
-    # If no node had c>1, return an empty adjacency:
-    if not e_row:
-        return torch.empty(2, 0, dtype=torch.long, device=device)
-
-    # Otherwise, concatenate pairs from all nodes:
-    e_row = torch.cat(e_row, dim=0)
-    e_col = torch.cat(e_col, dim=0)
-
-    # Deduplicate pair. For example: Before deduplication, pairs_raw = [ e0→e1, e1→e0, e0→e1, e1→e0 ] After deduplication: pairs_unique = [ e0→e1, e1→e0 ]
-    key  = e_row * E + e_col
-    uniq = torch.unique(key)
-    e_row = (uniq // E).long()
-    e_col = (uniq %  E).long()
-    return torch.stack([e_row, e_col], dim=0)
+    return src_e, dst_e
 
 class Attention(nn.Module):
     """
@@ -92,9 +74,9 @@ class Attention(nn.Module):
         E = t.size(0) # number of edge tokens
         return t.view(E, self.H, self.D)
 
-    def forward(self, edge_features, edge_edge_index, attn_bias):
+    def forward(self, edge_features, e2e, attn_bias):
         E = edge_features.size(0) # 
-        src_e, dst_e = edge_edge_index  # (M,), (M,)
+        src_e, dst_e = e2e  # (M,), (M,)
 
         q = self.split_heads(self.Wq(edge_features))  # (E, H, D)
         k = self.split_heads(self.Wk(edge_features))  # (E, H, D)
@@ -189,10 +171,8 @@ class GraphormerEdgeLayer(nn.Module):
         node_in = batch.x                                # (N, d)   (assumed already at 'd')
 
         E = edge_in.size(0)
-        edge_edge_index = getattr(batch, "edge_edge_index", None)
-        if edge_edge_index is None:
-            edge_edge_index = build_edge_edge_index(batch.edge_index, E, batch.num_nodes)
-            batch.edge_edge_index = edge_edge_index
+        device = edge_in.device
+        src_e, dst_e = resolve_e2e(batch, E=E, device=device)
 
         # Optional Graphormer additive bias on edge attention logits
         # Expect shape (M, H); set to None if don't use it.
@@ -201,7 +181,7 @@ class GraphormerEdgeLayer(nn.Module):
         # Eq. (8): h'_e = MHA(LN(h_e)) + h_e 
         edge_residual = edge_in
         edge_norm = self.edge_layernorm_1(edge_in)
-        edge_attn = self.attn_e(edge_norm, edge_edge_index, attn_bias=attn_bias)  # (E, d)
+        edge_attn = self.attn_e(edge_norm, (src_e, dst_e), attn_bias=attn_bias)  # (E, d)
         edge_attn = self.drop_attn(edge_attn)
         if self.residual:
             updated_edge_features = edge_residual + edge_attn
@@ -271,16 +251,16 @@ def get_edge_log_deg(batch, cache= True):
     else:
         edge_edge_index = getattr(batch, "edge_edge_index", None)
         if edge_edge_index is None:
-            warnings.warn(
-                "Computing edge line-graph degrees on the fly; ensure edge_edge_index is deduplicated."
-            )
             E = batch.edge_attr.size(0) if hasattr(batch, "edge_attr") else batch.edge_index.size(1)
-            edge_edge_index = build_edge_edge_index(batch.edge_index, E, batch.num_nodes)
+            edge_edge_index = batch.edge_index
             if cache:
                 batch.edge_edge_index = edge_edge_index
 
         _, dst_e = edge_edge_index
-        E = batch.edge_attr.size(0) if hasattr(batch, "edge_attr") else int(dst_e.max().item()) + 1
+        if hasattr(batch, "edge_attr"):
+            E = batch.edge_attr.size(0)  
+        else:
+            E = int(dst_e.max().item()) + 1
         ones = torch.ones_like(dst_e, dtype=torch.float)
         deg_e = scatter_add(ones, dst_e, dim=0, dim_size=E)        # (E,)
         log_deg_e = torch.log1p(deg_e)                              # (E,)
