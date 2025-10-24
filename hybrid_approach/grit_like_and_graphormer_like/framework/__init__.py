@@ -6,3 +6,4 @@ from .loader import * # noqa
 from .network import * # noqa
 from .optimizer import * # noqa
 from .train import * # noqa
+from .loss_function import * # noqa

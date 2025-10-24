@@ -31,7 +31,12 @@ train:
 
 model:
   type: GritTransformer
-  loss_fun: mse                  
+  # loss_fun: mse
+  loss_fun: mse_laplacian
+  laplace_lambda: 1e-3         # try 1e-4 ~ 3e-3
+  laplace_normalized: True     # normalized Laplacian for degree-robustness
+  laplace_norm_mode: per_node  # keeps magnitude stable across graphs
+  laplace_on_residuals: False                   
   
 
 gt:

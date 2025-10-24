@@ -31,7 +31,12 @@ train:
 
 model:
   type: GraphormerEdgeTransformer
-  loss_fun: mse                  
+  # loss_fun: mse
+  loss_fun: mse_laplacian
+  laplace_lambda: 1e-1         # try 1e-4 ~ 3e-3
+  laplace_normalized: True     # normalized Laplacian for degree-robustness
+  laplace_norm_mode: per_edge  # keeps magnitude stable across graphs
+  laplace_on_residuals: False  # set true to smooth errors instead of predictions                 
 
 gt:
   layer_type: GraphormerEdge
@@ -59,7 +64,7 @@ optim:
   optimizer: adamW
   weight_decay: 1e-5
   base_lr: 0.0002
-  max_epoch: 5
+  max_epoch: 10
   scheduler: linear_with_warmup
-  num_warmup_epochs: 3
+  num_warmup_epochs: 10
 
