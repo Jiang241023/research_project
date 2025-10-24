@@ -317,4 +317,4 @@ def features_per_sample(ddacs, out_dir: Path, action="save_npy"):
 
 if __name__ == '__main__':
     # Run it
-    features_per_sample(dataset, OUT_DIR, action="check_npy")
+    features_per_sample(dataset, OUT_DIR, action="save_npy")

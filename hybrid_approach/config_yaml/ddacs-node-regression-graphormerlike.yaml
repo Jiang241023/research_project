@@ -1,6 +1,6 @@
 out_dir: results
-metric_best: mae
-metric_agg: argmin
+metric_best: mae # use validation MAE (mean absolute error) to pick the best epoch
+metric_agg: argmin # Use argmin for lower-is-better metrics (MAE, MSE, RMSE, CE/NLL).
 accelerator: "cuda:0"
 tensorboard_each_run: True
 
@@ -32,7 +32,6 @@ train:
 model:
   type: GraphormerEdgeTransformer
   loss_fun: mse                  
-  graph_pooling: none
 
 gt:
   layer_type: GraphormerEdge
