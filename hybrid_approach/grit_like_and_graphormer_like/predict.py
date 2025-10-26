@@ -8,34 +8,6 @@ import framework
 from framework.loader.dataset.ddacs_npy_stream import DDACSNPYStream
 from torch_geometric.graphgym.config import set_cfg, load_cfg, cfg
 from torch_geometric.graphgym.model_builder import create_model
-from torch_geometric.utils import degree
-
-from torch_geometric.utils import degree
-
-def _laplacian_apply(y, edge_index, num_nodes, edge_weight=None):
-    """Compute (D - A) @ y."""
-    src, dst = edge_index
-    if edge_weight is None:
-        edge_weight = y.new_ones(src.numel())
-    # neighbor sum A@y
-    msg = y[src] * edge_weight.unsqueeze(-1)          # (E,C)
-    neigh_sum = torch.zeros_like(y).index_add(0, dst, msg)
-    # degree * y
-    deg = torch.zeros(num_nodes, device=y.device, dtype=y.dtype).index_add(0, dst, edge_weight)
-    degy = deg.unsqueeze(-1) * y
-    return degy - neigh_sum
-
-def refine_tv_l2(y0, edge_index, num_nodes, lam=1e-2, steps=5, step=0.5, weight=None):
-    """
-    Solve: min_y 0.5||y-y0||^2 + 0.5*lam*sum_{(u,v)}||y_u-y_v||^2
-    by a few explicit GD steps on y (closed-form exists, but this is simple & fast).
-    """
-    y = y0.clone()
-    for _ in range(steps):
-        Ly = _laplacian_apply(y, edge_index, num_nodes, edge_weight=weight)
-        grad = (y - y0) + lam * Ly                         # (N,C)
-        y = y - step * grad
-    return y
 
 # Load checkpoint
 def load_checkpoint(model, ckpt_path, device, strict=True):
@@ -98,6 +70,7 @@ def infer(data_dir, ckpt_path, cfg_path, out_dir, device='cuda:0', batch_size=8)
             # slice per-graph and save
             for g in range(int(batch.num_graphs)):
                 sid = int(batch.sample_id[g].item())
+                print(f"Now it is processing sample-ID: {sid}")
                 node_mask = (batch.batch == g)
                 pred_g = pred[node_mask].detach().cpu().numpy()
 
@@ -122,5 +95,5 @@ if __name__ == "__main__":
 
     infer(args.data, args.ckpt, args.cfg, args.out, device=args.device, batch_size=args.batch_size)
 
-#python predict.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression.yaml --ckpt /home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/results/ddacs-node-regression/41/ckpt/9.ckpt --data /mnt/data/jiang --out /home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/grit_like --batch_size 16
+#python predict.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression.yaml --ckpt /home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/results/ddacs-node-regression/41/ckpt/5.ckpt --data /mnt/data/jiang --out /home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/grit_like --batch_size 16
 #python predict.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression-graphormerlike.yaml --ckpt /home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/results/ddacs-node-regression-graphormerlike/41/ckpt/9.ckpt --data /mnt/data/jiang --out /home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/graphormer_like --batch_size 16 

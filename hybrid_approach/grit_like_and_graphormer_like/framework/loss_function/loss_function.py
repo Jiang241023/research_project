@@ -3,36 +3,55 @@ import torch.nn.functional as F
 from torch_geometric.graphgym.register import register_loss
 from torch_geometric.graphgym.config import cfg
 
-def _laplacian_energy(pred, edge_index, *, normalized: bool, norm_mode: str):
-    """
-    Dirichlet energy on a graph: sum_{(i,j) in E} ||pred_i - pred_j||^2
-    pred: [N, D], edge_index: [2, E] (can be directed or unique undirected)
-    normalized: use 1/sqrt(d_i d_j) scaling
-    norm_mode: 'per_edge' | 'per_node' | 'none'  (stabilizes scale across graph sizes)
-    """
+def laplacian_energy(pred, edge_index, normalized, norm_mode, edge_weight, node_batch):
     row, col = edge_index
     N = pred.size(0)
     E = edge_index.size(1)
 
-    # Optional normalized Laplacian weighting
-    if normalized:
-        deg = torch.zeros(N, device=pred.device, dtype=pred.dtype)
-        # treat edges as undirected for degree counting
-        deg.scatter_add_(0, row, torch.ones(E, device=pred.device, dtype=pred.dtype))
-        deg.scatter_add_(0, col, torch.ones(E, device=pred.device, dtype=pred.dtype))
-        scale = (deg[row].clamp_min(1e-12) * deg[col].clamp_min(1e-12)).rsqrt()
+    if edge_weight is None:
+        w = pred.new_ones(E)
     else:
-        scale = 1.0
+        w = edge_weight
 
-    diff = pred[row] - pred[col]             # [E, D]
-    e_contrib = (diff * diff).sum(-1)        # [E]
-    energy = (e_contrib * scale).sum()       # scalar
+    if normalized:
+        # exact L_sym: use g = D^{-1/2} f
+        deg = pred.new_zeros(N)
+        deg.scatter_add_(0, row, w)  # treat as undirected degree
+        deg.scatter_add_(0, col, w)
+        inv_sqrt_deg = deg.clamp_min(1e-12).rsqrt()
+        g = pred * inv_sqrt_deg.unsqueeze(-1)
+        diff = g[row] - g[col]
+        e_contrib = w * (diff * diff).sum(-1)
+    else:
+        diff = pred[row] - pred[col]
+        e_contrib = w * (diff * diff).sum(-1)
 
+    energy = e_contrib.sum()
+
+    # Size normalization
+    if node_batch is None:
+        if norm_mode == 'per_edge':
+            energy = energy / max(E, 1)
+        elif norm_mode == 'per_node':
+            energy = energy / max(N, 1)
+        return energy
+
+    # Optional: per-graph normalization if you have multi-graph batches
+    # Map edges to graphs via their source nodes
+    e2g = node_batch[row]
+    num_graphs = int(node_batch.max().item()) + 1
+    # Sum per graph
+    per_g = pred.new_zeros(num_graphs).index_add(0, e2g, e_contrib)
     if norm_mode == 'per_edge':
-        energy = energy / max(E, 1)
+        edges_per_g = torch.bincount(e2g, minlength=num_graphs).clamp_min(1)
+        energy = (per_g / edges_per_g).mean()
     elif norm_mode == 'per_node':
-        energy = energy / max(N, 1)
+        nodes_per_g = torch.bincount(node_batch, minlength=num_graphs).clamp_min(1)
+        energy = (per_g / nodes_per_g).mean()
+    else:
+        energy = per_g.sum()
     return energy
+
 
 @register_loss('mse_laplacian')
 def mse_laplacian_loss(pred, true, batch=None):
@@ -48,6 +67,6 @@ def mse_laplacian_loss(pred, true, batch=None):
         return total, pred  # <-- return tuple
 
     signal = pred - true if on_resid else pred
-    lap = _laplacian_energy(signal, batch.edge_index, normalized=use_norm, norm_mode=norm_mode)
+    lap = laplacian_energy(signal, batch.edge_index, normalized=use_norm, norm_mode=norm_mode)
     total = mse + lam * lap
     return total, pred
