@@ -1,0 +1,70 @@
+out_dir: results
+metric_best: mae # use validation MAE (mean absolute error) to pick the best epoch
+metric_agg: argmin # Use argmin for lower-is-better metrics (MAE, MSE, RMSE, CE/NLL).
+accelerator: "cuda:0"
+tensorboard_each_run: True
+
+dataset:
+  pe_transform_on_the_fly: True
+  format: PyG-DDACSNPYStream     
+  name: node-regression
+  dir: /mnt/data/jiang          
+  task: graph
+  split_mode: standard
+  task_type: regression
+  transductive: False
+  node_encoder: True
+  node_encoder_name: DegreeCentrality
+  node_encoder_bn: False
+  edge_encoder: True
+  edge_encoder_name: EdgeCentrality
+  edge_encoder_bn: False
+  pe_transform_on_the_fly: True
+  max_samples: 1024
+
+train:
+  mode: train
+  batch_size: 8              
+  eval_period: 1
+  ckpt_best: True
+  ckpt_clean: True
+
+model:
+  type: GraphormerEdgeTransformer
+  # loss_fun: mse
+  loss_fun: mse_laplacian
+  laplace_lambda: 1e-1         # try 1e-4 ~ 3e-3
+  laplace_normalized: True     # normalized Laplacian for degree-robustness
+  laplace_norm_mode: per_edge  # keeps magnitude stable across graphs
+  laplace_on_residuals: False  # set true to smooth errors instead of predictions                 
+
+gt:
+  layer_type: GraphormerEdge
+  layers: 3
+  n_heads: 2
+  dim_hidden: 64
+  dropout: 0.1
+  attn_dropout: 0.1
+  layer_norm: False
+  batch_norm: True
+  update_e: True
+
+gnn:
+  head: inductive_node_graphormerlke
+  layers_pre_mp: 0  # 'pre–message passing' MLP
+  layers_post_mp: 3 # 'post–message passing' MLP
+  dim_inner: 64
+  dim_out: 3
+  batchnorm: True
+  act: Gelu
+  dropout: 0.0
+  
+optim:
+  clip_grad_norm: True
+  optimizer: adamW
+  weight_decay: 1e-5
+  base_lr: 0.0002
+  max_epoch: 10
+  scheduler: linear_with_warmup
+  num_warmup_epochs: 10
+
