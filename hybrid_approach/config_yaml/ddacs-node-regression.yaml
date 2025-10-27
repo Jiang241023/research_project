@@ -32,11 +32,11 @@ train:
 model:
   type: GritTransformer
   loss_fun: mse
-  # loss_fun: mse_laplacian
+  # loss_fun: mse_combined_with_laplacian
   # laplace_lambda: 1e-3         # try 1e-4 ~ 3e-3
   # laplace_normalized: True     # normalized Laplacian for degree-robustness
   # laplace_norm_mode: per_node  # keeps magnitude stable across graphs
-  # laplace_on_residuals: False                   
+  # laplace_on_residuals: True                   
   
 
 gt:
@@ -72,7 +72,7 @@ optim:
   clip_grad_norm: True
   optimizer: adamW
   weight_decay: 1e-5
-  base_lr: 0.0002
-  max_epoch: 10
-  scheduler: linear_with_warmup
-  num_warmup_epochs: 10
+  base_lr: 0.0005
+  max_epoch: 100
+  scheduler: cosine_with_warmup
+  num_warmup_epochs: 6
