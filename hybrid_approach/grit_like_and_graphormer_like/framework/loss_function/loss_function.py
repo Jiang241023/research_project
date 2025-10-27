@@ -63,28 +63,35 @@ def laplacian_energy(pred, edge_index, norm_mode, node_batch, edge_weight = None
     return energy
 
 @register_loss('mse_combined_with_laplacian')
-def mse_laplacian_loss(pred, true, batch=None):
+def mse_laplacian_loss(pred, true, batch):
 
     # Reads hyper-params from YAML
     lam = float(getattr(cfg.model, 'laplace_lambda', 1e-3))
     use_norm = bool(getattr(cfg.model, 'laplace_normalized', True))
     norm_mode = getattr(cfg.model, 'laplace_norm_mode', 'per_edge')
     on_residuals = bool(getattr(cfg.model, 'laplace_on_residuals', False))
+    only_mse = bool(getattr(cfg.model, 'only_mse ', False))
 
     # Standard mean-squared error over all nodes and features.
     mse = F.mse_loss(pred, true, reduction='mean')
 
-    # If no graph connectivity is available, fall back to pure MSE.
-    if batch is None or not hasattr(batch, 'edge_index') or batch.edge_index is None:
-        total = mse
-        return total, pred  # return tuple
-
-    # Residual smoothing discourages high-frequency errors without washing out the target structure.
-    if on_residuals:
-        signal = pred - true
+    if only_mse:
+        return mse, pred
     else:
-        signal = pred
+        if batch is None or not hasattr(batch, 'edge_index') or batch.edge_index is None:
+            print("batch is None")
+            return mse, pred
+        
+        # Residual smoothing discourages high-frequency errors without washing out the target structure.
+        if on_residuals:
+            signal = pred - true
+            #print(f"signal (pred - true):{signal}")
+        else:
+            signal = pred
+            #print(f"signal (pred):{signal}")
 
-    lap = laplacian_energy(signal, batch.edge_index, normalized=use_norm, norm_mode=norm_mode)
-    total = mse + lam * lap
-    return total, pred
+        lap = laplacian_energy(signal, batch.edge_index, node_batch=getattr(batch, 'batch', None), normalized=use_norm, norm_mode=norm_mode)
+        loss = mse + lam * lap
+        #print(f"total: {total}")
+        #print(f"pred: {pred}")
+        return loss, pred

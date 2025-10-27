@@ -3,6 +3,7 @@ import time
 import torch
 from torch_geometric.graphgym.config import cfg
 from torch_geometric.graphgym.loss import compute_loss
+from torch_geometric.graphgym.register import loss_dict
 from torch_geometric.graphgym.register import register_train
 from torch_geometric.graphgym.checkpoint import clean_ckpt, load_ckpt, save_ckpt
 from torch_geometric.graphgym.utils.epoch import is_ckpt_epoch, is_eval_epoch
@@ -16,7 +17,9 @@ def train_epoch(logger, loader, model, optimizer, scheduler):
         pred, true = model(batch)
         #print(f"the shape of pred (from train_epoch): {pred.shape}")
         #print(f"the shape of true (from train_epoch): {true.shape}")
-        loss, pred_score = compute_loss(pred, true)
+        # loss, pred_score = compute_loss(pred, true)
+        loss_fn = loss_dict[cfg.model.loss_fun]
+        loss, pred_score = loss_fn(pred, true, batch=batch)
         #print(f"loss (from train_epoch): {loss}")
         #print(f"the shape of pred_score (from train_epoch): {pred_score.shape}")
         loss.backward()
@@ -35,8 +38,9 @@ def eval_epoch(logger, loader, model):
     for step, batch in enumerate(loader):
         batch.to(torch.device(cfg.device))
         pred, true = model(batch)
-
-        loss, pred_score = compute_loss(pred, true)
+        #loss, pred_score = compute_loss(pred, true)
+        loss_fn = loss_dict[cfg.model.loss_fun]
+        loss, pred_score = loss_fn(pred, true, batch=batch)
         logger.update_stats(true=true.detach().cpu(),
                             pred=pred_score.detach().cpu(), loss=loss.item(),
                             lr=0, time_used=time.time() - time_start,
