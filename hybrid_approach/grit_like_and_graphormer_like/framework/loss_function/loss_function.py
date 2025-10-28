@@ -70,16 +70,16 @@ def mse_laplacian_loss(pred, true, batch):
     use_norm = bool(getattr(cfg.model, 'laplace_normalized', True))
     norm_mode = getattr(cfg.model, 'laplace_norm_mode', 'per_edge')
     on_residuals = bool(getattr(cfg.model, 'laplace_on_residuals', False))
-    only_mse = bool(getattr(cfg.model, 'only_mse ', False))
+    only_mse = bool(getattr(cfg.model, 'only_mse', False))
 
     # Standard mean-squared error over all nodes and features.
     mse = F.mse_loss(pred, true, reduction='mean')
 
     if only_mse:
-        print(f"mse:{mse}")
-        print(f"pred:{pred}")
+        # print(f"mse:{mse}")
+        # print(f"pred:{pred}")
         return mse, pred
-   
+
     if batch is None or not hasattr(batch, 'edge_index') or batch.edge_index is None:
         print("batch is None")
         return mse, pred
@@ -87,13 +87,13 @@ def mse_laplacian_loss(pred, true, batch):
     # Residual smoothing discourages high-frequency errors without washing out the target structure.
     if on_residuals:
         signal = pred - true
-        #print(f"signal (pred - true):{signal}")
+        # print(f"signal (pred - true):{signal}")
     else:
         signal = pred
         #print(f"signal (pred):{signal}")
 
     lap = laplacian_energy(signal, batch.edge_index, node_batch=getattr(batch, 'batch', None), normalized=use_norm, norm_mode=norm_mode)
     loss = mse + lam * lap
-    #print(f"total: {total}")
-    #print(f"pred: {pred}")
+    # print(f"loss: {loss}")
+    # print(f"pred: {pred}")
     return loss, pred

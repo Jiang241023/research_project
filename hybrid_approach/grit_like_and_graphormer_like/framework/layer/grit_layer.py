@@ -12,7 +12,6 @@ import opt_einsum as oe
 
 from yacs.config import CfgNode as CN
 
-import warnings
 
 def pyg_softmax(src, index, num_nodes=None):
     r"""Computes a sparsely evaluated softmax.
@@ -316,7 +315,6 @@ def get_log_deg(batch):
         deg = batch.deg
         log_deg = torch.log(deg + 1).unsqueeze(-1)
     else:
-        warnings.warn("Compute the degree on the fly; Might be problematric if have applied edge-padding to complete graphs")
         deg = pyg.utils.degree(batch.edge_index[1],
                                num_nodes=batch.num_nodes,
                                dtype=torch.float
