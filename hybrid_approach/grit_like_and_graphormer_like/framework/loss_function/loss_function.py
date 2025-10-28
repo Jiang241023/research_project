@@ -76,22 +76,24 @@ def mse_laplacian_loss(pred, true, batch):
     mse = F.mse_loss(pred, true, reduction='mean')
 
     if only_mse:
+        print(f"mse:{mse}")
+        print(f"pred:{pred}")
         return mse, pred
+   
+    if batch is None or not hasattr(batch, 'edge_index') or batch.edge_index is None:
+        print("batch is None")
+        return mse, pred
+    
+    # Residual smoothing discourages high-frequency errors without washing out the target structure.
+    if on_residuals:
+        signal = pred - true
+        #print(f"signal (pred - true):{signal}")
     else:
-        if batch is None or not hasattr(batch, 'edge_index') or batch.edge_index is None:
-            print("batch is None")
-            return mse, pred
-        
-        # Residual smoothing discourages high-frequency errors without washing out the target structure.
-        if on_residuals:
-            signal = pred - true
-            #print(f"signal (pred - true):{signal}")
-        else:
-            signal = pred
-            #print(f"signal (pred):{signal}")
+        signal = pred
+        #print(f"signal (pred):{signal}")
 
-        lap = laplacian_energy(signal, batch.edge_index, node_batch=getattr(batch, 'batch', None), normalized=use_norm, norm_mode=norm_mode)
-        loss = mse + lam * lap
-        #print(f"total: {total}")
-        #print(f"pred: {pred}")
-        return loss, pred
+    lap = laplacian_energy(signal, batch.edge_index, node_batch=getattr(batch, 'batch', None), normalized=use_norm, norm_mode=norm_mode)
+    loss = mse + lam * lap
+    #print(f"total: {total}")
+    #print(f"pred: {pred}")
+    return loss, pred
