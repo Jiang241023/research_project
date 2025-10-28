@@ -9,7 +9,7 @@ class EdgeCentralityEncoder(nn.Module):
     Graphormer-style *edge* centrality:
       centrality(e = u->v) = Emb_out[deg_out(u)] + Emb_in[deg_in(v)]
     """
-    def __init__(self, emb_dim: int, max_deg: int = 256, use_raw: bool = True, edge_in_dim: int = 31):
+    def __init__(self, emb_dim, max_deg = 256, use_raw = True, edge_in_dim = 31):
         super().__init__()
         self.max_deg = int(max_deg)
         self.use_raw = bool(use_raw)
@@ -23,7 +23,7 @@ class EdgeCentralityEncoder(nn.Module):
             self.edge_proj = nn.Linear(edge_in_dim, emb_dim)
 
     @torch.no_grad()
-    def _node_degrees(self, edge_index, num_nodes):
+    def node_degrees(self, edge_index, num_nodes):
         # Row 0 = sources, Row 1 = destinations (PyG convention)
         src, dst = edge_index
         deg_out = pyg.utils.degree(src, num_nodes=num_nodes, dtype=torch.long)  # out-degree per node
@@ -38,7 +38,7 @@ class EdgeCentralityEncoder(nn.Module):
         src, dst = batch.edge_index
 
         #  Node-level degrees (length N), then index per edge
-        deg_out_nodes, deg_in_nodes = self._node_degrees(batch.edge_index, batch.num_nodes)
+        deg_out_nodes, deg_in_nodes = self.node_degrees(batch.edge_index, batch.num_nodes)
         du = deg_out_nodes[src].to(device)  # (E,)
         dv = deg_in_nodes[dst].to(device)   # (E,)
 

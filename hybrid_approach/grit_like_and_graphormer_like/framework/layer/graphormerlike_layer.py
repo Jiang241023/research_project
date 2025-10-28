@@ -5,7 +5,6 @@ import torch.nn.functional as F
 from torch_scatter import scatter, scatter_add, scatter_max
 from torch_geometric.graphgym.register import register_layer
 from yacs.config import CfgNode as CN
-import warnings
 
 # utils
 def pyg_softmax(src, index, num_nodes=None):

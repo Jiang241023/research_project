@@ -51,7 +51,7 @@ class CustomLogger(Logger):
     def basic(self):
         stats = {
             'loss': round(self._loss / self._size_current, max(8, cfg.round)),
-            'lr': round(self._lr, max(8, cfg.round)),
+            'lr': round(self._lr, max(12, cfg.round)),
             'params': self._params,
             'time_iter': round(self.time_iter(), cfg.round),
         }
@@ -187,35 +187,14 @@ class CustomLogger(Logger):
         return {
             'mae': reformat(mean_absolute_error(true, pred)),
             'r2': reformat(r2_score(true, pred, multioutput='uniform_average')),
-            'spearmanr': reformat(eval_spearmanr(true.numpy(),
-                                                 pred.numpy())['spearmanr']),
-            'mse': reformat(mean_squared_error(true, pred)),
             'rmse': reformat(mean_squared_error(true, pred) ** 0.5),
         }
 
     def update_stats(self, true, pred, loss, lr, time_used, params,
-                     dataset_name=None, **kwargs):
-        if dataset_name == 'ogbg-code2':
-            assert true['y_arr'].shape[1] == len(pred)  # max_seq_len (5)
-            assert true['y_arr'].shape[0] == pred[0].shape[0]  # batch size
-            batch_size = true['y_arr'].shape[0]
-
-            # Decode the predicted sequence tokens, so we don't need to store
-            # the logits that take significant memory.
-            from grit_like_framework.loader.ogbg_code2_utils import idx2vocab, \
-                decode_arr_to_seq
-            arr_to_seq = lambda arr: decode_arr_to_seq(arr, idx2vocab)
-            mat = []
-            for i in range(len(pred)):
-                mat.append(torch.argmax(pred[i].detach(), dim=1).view(-1, 1))
-            mat = torch.cat(mat, dim=1)
-            seq_pred = [arr_to_seq(arr) for arr in mat]
-            seq_ref = [true['y'][i] for i in range(len(true['y']))]
-            pred = seq_pred
-            true = seq_ref
-        else:
-            assert true.shape[0] == pred.shape[0]
-            batch_size = true.shape[0]
+                     dataset_name=None, **kwargs):     
+        
+        assert true.shape[0] == pred.shape[0]
+        batch_size = true.shape[0]
         self._iter += 1
         self._true.append(true)
         self._pred.append(pred)
@@ -302,19 +281,3 @@ def create_logger():
         loggers.append(CustomLogger(name=names[i], task_type=infer_task()))
     return loggers
 
-
-def eval_spearmanr(y_true, y_pred):
-    """Compute Spearman Rho averaged across tasks.
-    """
-    res_list = []
-
-    if y_true.ndim == 1:
-        res_list.append(stats.spearmanr(y_true, y_pred)[0])
-    else:
-        for i in range(y_true.shape[1]):
-            # ignore nan values
-            is_labeled = ~np.isnan(y_true[:, i])
-            res_list.append(stats.spearmanr(y_true[is_labeled, i],
-                                            y_pred[is_labeled, i])[0])
-
-    return {'spearmanr': sum(res_list) / len(res_list)}
