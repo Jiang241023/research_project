@@ -212,7 +212,7 @@ if __name__ == '__main__':
 
         # Print model + minimal cfg (per-run)
         logging.info(model)
-        cfg.params = params_count(model)
+        cfg.params = params_count(model) 
         logging.info('Num parameters: %s', cfg.params)
 
         effective_run = cfg_diff(cfg, defaults_snapshot)

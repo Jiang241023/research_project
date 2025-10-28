@@ -5,7 +5,6 @@ accelerator: "cuda:0"
 tensorboard_each_run: True
 
 dataset:
-  pe_transform_on_the_fly: True
   format: PyG-DDACSNPYStream     
   name: node-regression
   dir: /mnt/data/jiang          
@@ -19,8 +18,7 @@ dataset:
   edge_encoder: True
   edge_encoder_name: EdgeCentrality
   edge_encoder_bn: False
-  pe_transform_on_the_fly: True
-  max_samples: 1024
+  max_samples: None
 
 train:
   mode: train
