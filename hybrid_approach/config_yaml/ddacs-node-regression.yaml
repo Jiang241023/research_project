@@ -33,11 +33,11 @@ model:
   type: GritTransformer
   # loss_fun: mse
   loss_fun: mse_combined_with_laplacian
-  laplace_lambda: 3e-3         # try 1e-4 ~ 3e-3
+  laplace_lambda: 1e-2         
   laplace_normalized: True     # normalized Laplacian for degree-robustness
   laplace_norm_mode: per_node  # keeps magnitude stable across graphs
   laplace_on_residuals: True   # set true to smooth errors instead of predictions                
-  only_mse: True             # !!! if set it to be true, the loss function will become mse!!!!
+  only_mse: False             # !!! if set it to be true, the loss function will become mse!!!!
 
 gt:
   layer_type: GritTransformer

@@ -51,15 +51,15 @@ def laplacian_energy(pred, edge_index, norm_mode, node_batch, edge_weight = None
     num_graphs = int(node_batch.max().item()) + 1
 
     # Sum edge contributions per graph: energy_g = sum_{edges in g} c_e
-    ernergy_per_graph = pred.new_zeros(num_graphs).index_add(0, e2g, edge_contributions)
+    energy_per_graph = pred.new_zeros(num_graphs).index_add(0, e2g, edge_contributions)
     if norm_mode == 'per_edge':
         edges_per_graph = torch.bincount(e2g, minlength=num_graphs).clamp_min(1)
-        energy = (ernergy_per_graph / edges_per_graph).mean()
+        energy = (energy_per_graph / edges_per_graph).mean()
     elif norm_mode == 'per_node':
         nodes_per_graph = torch.bincount(node_batch, minlength=num_graphs).clamp_min(1)
-        energy = (ernergy_per_graph / nodes_per_graph).mean()
+        energy = (energy_per_graph / nodes_per_graph).mean()
     else:
-        energy = ernergy_per_graph.sum()
+        energy = energy_per_graph.sum()
     return energy
 
 @register_loss('mse_combined_with_laplacian')

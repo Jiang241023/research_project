@@ -139,6 +139,7 @@ def run_loop_settings():
         run_ids = split_indices
     return run_ids, seeds, split_indices
 
+
 if __name__ == '__main__':
     # Load cmd line args
     args = parse_args()
@@ -192,7 +193,8 @@ if __name__ == '__main__':
 
         logging.info(f"[*] Run ID {run_id}: seed={cfg.seed}, "
                      f"split_index={cfg.dataset.split_index}")
-        logging.info(f"    Starting now: {datetime.datetime.now()}")
+        t0 = datetime.datetime.now()
+        logging.info(f"    Starting now: {t0}")
 
         # Data / Logger / Model
         loaders = create_loader()
@@ -243,7 +245,8 @@ if __name__ == '__main__':
     if args.mark_done:
         os.rename(args.cfg_file, f'{args.cfg_file}_done')
 
-    logging.info(f"[*] All done: {datetime.datetime.now()}")
+    t1 = datetime.datetime.now()
+    logging.info(f"[*] All done: {t1} (total: {t1 - t0})")
 
 # Example runs:
 # python main.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression.yaml  wandb.use False accelerator "cuda:0" optim.max_epoch 5 seed 41 dataset.dir '/mnt/data/jiang'

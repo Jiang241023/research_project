@@ -187,7 +187,6 @@ class CustomLogger(Logger):
         return {
             'mae': reformat(mean_absolute_error(true, pred)),
             'r2': reformat(r2_score(true, pred, multioutput='uniform_average')),
-            'mse': reformat(mean_squared_error(true, pred)),
             'rmse': reformat(mean_squared_error(true, pred) ** 0.5),
         }
 
