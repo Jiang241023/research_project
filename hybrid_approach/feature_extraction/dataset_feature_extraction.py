@@ -251,70 +251,135 @@ print(f"Loaded {len(dataset)} simulations")
 OUT_DIR = Path("/mnt/data/jiang/")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# Save or check samples
-def features_per_sample(ddacs, out_dir: Path, action="save_npy"):
+# # Save or check samples
+# def features_per_sample(ddacs, out_dir: Path, action="save_npy"):
+#     out_dir.mkdir(parents=True, exist_ok=True)
+
+#     if action == "save_npy":
+#         n = len(ddacs)
+#         t0 = time.perf_counter()
+#         for i in tqdm(range(n), desc="Saving features (NPY per array)"):
+#             sample_id, _, h5_path = ddacs[i]
+
+#             # your existing extractor
+#             new_concatenated_features, node_displacement, edge_index, edge_features, node_coordinates, node_index, edge_index_2, edge_edge_index = prepare_sample(h5_path)
+#             # edge_index, edge_edge_index = prepare_sample(h5_path)
+#             # cast dtypes explicitly
+#             X  = new_concatenated_features.astype(np.float32)    # (N, 34)
+#             Y  = node_displacement.astype(np.float32)    # (N, 3)
+#             EI = edge_index.astype(np.int64)      # (E, 2)
+#             EF = edge_features.astype(np.float32) # (E, 31)
+#             node_coords = node_coordinates.astype(np.float32) 
+#             node_index = node_index.astype(np.int64)
+#             EI_2 = edge_index_2.astype(np.int64)      # (E, )
+#             EEI = edge_edge_index.astype(np.int64)
+
+#             # save arrays as separate .npy files
+#             np.save(out_dir / f"{sample_id}_new_concatenated_features.npy",  X)
+#             np.save(out_dir / f"{sample_id}_node_displacement.npy",  Y)
+#             np.save(out_dir / f"{sample_id}_edge_index.npy", EI)
+#             np.save(out_dir / f"{sample_id}_edge_features.npy", EF)
+#             np.save(out_dir / f"{sample_id}_node_coords.npy", node_coords)
+#             np.save(out_dir / f"{sample_id}_node_index.npy", node_index)
+#             np.save(out_dir / f"{sample_id}_edge_index_2.npy", EI_2)
+#             np.save(out_dir / f"{sample_id}_edge_edge_index.npy", EEI)
+
+#         total_time = time.perf_counter() - t0
+#         print("\n=== Save summary ===")
+#         print(f"dir: {out_dir}")
+#         print("format: NPY (one file per array)")
+#         print(f"total time: {total_time:.2f} s")
+
+#     elif action == "check_npy":
+#         sample_to_check = "16039"  # change to any ID you saved
+#         X  = np.load(out_dir / f"{sample_to_check}_new_concatenated_features.npy")
+#         Y  = np.load(out_dir / f"{sample_to_check}_node_displacement.npy")
+#         EI = np.load(out_dir / f"{sample_to_check}_edge_index.npy")
+#         EF = np.load(out_dir / f"{sample_to_check}_edge_features.npy")
+#         node_coords = np.load(out_dir / f"{sample_to_check}_node_coords.npy")
+#         node_index = np.load(out_dir / f"{sample_to_check}_node_index.npy")
+#         EI_2 = np.load(out_dir / f"{sample_to_check}_edge_index_2.npy")
+#         EEI = np.load(out_dir / f"{sample_to_check}_edge_edge_index.npy")
+#         print("-----------------------------------")
+#         print(f"For sample {sample_to_check} (NPY set):")
+#         print("-----------------------------------")
+#         print(f"new_concatenated_features[0]:\n{X[0]}")
+#         print(f"node_displacement[0]:\n{Y[0]}")
+#         print(f"edge_index[0]: {EI[0]}")
+#         print(f"edge_features[0]:\n{EF[0]}")
+#         print(f"node_coords[0]:\n{node_coords[0]}")
+#         print(f"node_index[0]:\n{node_index[0]}")
+#         print(f"edge_index_2[0]: {EI_2[0]}")  
+#         print(f"edge_edge_index[0]: {EEI[0]}")       
+
+#     else:
+#         print("action must be one of: 'save_npy', 'check_npy'")
+
+# if __name__ == '__main__':
+#     # Run it
+#     features_per_sample(dataset, OUT_DIR, action="save_npy")
+
+def npz_path(out_dir: Path, sample_id: str | int) -> Path:
+    return out_dir / f"{sample_id}.npz"
+
+def features_per_sample(ddacs, out_dir: Path, action="save_npz"):
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    if action == "save_npy":
+    if action == "save_npz":
         n = len(ddacs)
         t0 = time.perf_counter()
-        for i in tqdm(range(n), desc="Saving features (NPY per array)"):
-            sample_id, _, h5_path = ddacs[i]
+        for i in tqdm(range(n), desc="Saving features (NPZ bundle per sample)"):
+            sample_id, _, h5_path = ddacs[i]    
+            (X, Y, EI, EF,POS, NODE_IDX, EI_2, EEI) = prepare_sample(h5_path)
 
-            # your existing extractor
-            new_concatenated_features, node_displacement, edge_index, edge_features, node_coordinates, node_index, edge_index_2, edge_edge_index = prepare_sample(h5_path)
-            # edge_index, edge_edge_index = prepare_sample(h5_path)
-            # cast dtypes explicitly
-            X  = new_concatenated_features.astype(np.float32)    # (N, 34)
-            Y  = node_displacement.astype(np.float32)    # (N, 3)
-            EI = edge_index.astype(np.int64)      # (E, 2)
-            EF = edge_features.astype(np.float32) # (E, 31)
-            node_coords = node_coordinates.astype(np.float32) 
-            node_index = node_index.astype(np.int64)
-            EI_2 = edge_index_2.astype(np.int64)      # (E, )
-            EEI = edge_edge_index.astype(np.int64)
 
-            # save arrays as separate .npy files
-            np.save(out_dir / f"{sample_id}_new_concatenated_features.npy",  X)
-            np.save(out_dir / f"{sample_id}_node_displacement.npy",  Y)
-            np.save(out_dir / f"{sample_id}_edge_index.npy", EI)
-            np.save(out_dir / f"{sample_id}_edge_features.npy", EF)
-            np.save(out_dir / f"{sample_id}_node_coords.npy", node_coords)
-            np.save(out_dir / f"{sample_id}_node_index.npy", node_index)
-            np.save(out_dir / f"{sample_id}_edge_index_2.npy", EI_2)
-            np.save(out_dir / f"{sample_id}_edge_edge_index.npy", EEI)
-
+            # One compressed NPZ per sample (keys match your previous filenames)
+            np.savez_compressed(
+            npz_path(out_dir, sample_id),
+            new_concatenated_features=X,
+            node_displacement=Y,
+            edge_index=EI,
+            edge_features=EF,
+            node_coords=POS,
+            node_index=NODE_IDX,
+            edge_index_2=EI_2,
+            edge_edge_index=EEI,
+            )
         total_time = time.perf_counter() - t0
         print("\n=== Save summary ===")
         print(f"dir: {out_dir}")
-        print("format: NPY (one file per array)")
+        print("format: NPZ (one compressed bundle per sample)")
         print(f"total time: {total_time:.2f} s")
 
-    elif action == "check_npy":
-        sample_to_check = "16039"  # change to any ID you saved
-        X  = np.load(out_dir / f"{sample_to_check}_new_concatenated_features.npy")
-        Y  = np.load(out_dir / f"{sample_to_check}_node_displacement.npy")
-        EI = np.load(out_dir / f"{sample_to_check}_edge_index.npy")
-        EF = np.load(out_dir / f"{sample_to_check}_edge_features.npy")
-        node_coords = np.load(out_dir / f"{sample_to_check}_node_coords.npy")
-        node_index = np.load(out_dir / f"{sample_to_check}_node_index.npy")
-        EI_2 = np.load(out_dir / f"{sample_to_check}_edge_index_2.npy")
-        EEI = np.load(out_dir / f"{sample_to_check}_edge_edge_index.npy")
-        print("-----------------------------------")
-        print(f"For sample {sample_to_check} (NPY set):")
-        print("-----------------------------------")
-        print(f"new_concatenated_features[0]:\n{X[0]}")
-        print(f"node_displacement[0]:\n{Y[0]}")
-        print(f"edge_index[0]: {EI[0]}")
-        print(f"edge_features[0]:\n{EF[0]}")
-        print(f"node_coords[0]:\n{node_coords[0]}")
-        print(f"node_index[0]:\n{node_index[0]}")
-        print(f"edge_index_2[0]: {EI_2[0]}")  
-        print(f"edge_edge_index[0]: {EEI[0]}")       
 
+    elif action == "check_npz":
+        sample_to_check = "16039" # change to any ID you saved
+        npz_file = npz_path(out_dir, sample_to_check)
+        if not npz_file.exists():
+            raise FileNotFoundError(f"{npz_file} not found; run with action='save_npz' first.")
+        with np.load(npz_file) as z:
+            X = z["new_concatenated_features"]
+            Y = z["node_displacement"]
+            EI = z["edge_index"]
+            EF = z["edge_features"]
+            POS = z["node_coords"]
+            NODE_IDX = z["node_index"]
+            EI_2 = z["edge_index_2"]
+            EEI = z["edge_edge_index"]
+            print("-----------------------------------")
+            print(f"For sample {sample_to_check} (NPZ bundle):")
+            print("-----------------------------------")
+            print(f"new_concatenated_features shape: {X.shape}; new_concatenated_features[0]:\n{X[0]}")
+            print(f"node_displacement shape: {Y.shape}; node_displacement[0]:\n{Y[0]}")
+            print(f"edge_index shape: {EI.shape}; edge_index[0]: {EI[0]}")
+            print(f"edge_features shape: {EF.shape}; edge_features[0]:\n{EF[0]}")
+            print(f"node_coords shape: {POS.shape}; node_coords[0]:\n{POS[0]}")
+            print(f"node_index shape: {NODE_IDX.shape}; node_index[0]: {NODE_IDX[0]}")
+            print(f"edge_index_2 shape: {EI_2.shape}; edge_index_2[0]: {EI_2[0]}")
+            print(f"edge_edge_index shape: {EEI.shape}; edge_edge_index[0]: {EEI[0]}")
     else:
-        print("action must be one of: 'save_npy', 'check_npy'")
+        print("action must be one of: 'save_npz', 'check_npz'")
 
 if __name__ == '__main__':
     # Run it
-    features_per_sample(dataset, OUT_DIR, action="save_npy")
+    features_per_sample(dataset, OUT_DIR, action="save_npz")

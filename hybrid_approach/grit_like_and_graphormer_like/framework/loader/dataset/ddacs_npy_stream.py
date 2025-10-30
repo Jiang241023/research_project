@@ -36,6 +36,24 @@ def _paths_for_id(root, sid):
         "edge_edge_index":   os.path.join(root, f"{sid}_edge_edge_index.npy"),
     }
 
+# ---------- Utilities ----------
+def _np_load(path, dtype=None, mmap=True):
+    """Load .npy with optional dtype cast and memory map."""
+    arr = np.load(path, mmap_mode="r") if mmap else np.load(path)
+    if dtype is not None and arr.dtype != dtype:
+        arr = arr.astype(dtype, copy=False)
+    return arr
+
+def _np_load_writable(path, dtype=None, mmap=True, ensure_writable=True):
+    """
+    Like _np_load, but guarantees a writable ndarray so torch.from_numpy
+    won't warn. Copies only if the source is read-only (e.g., memmap 'r').
+    """
+    arr = _np_load(path, dtype=dtype, mmap=mmap)
+    if ensure_writable and not arr.flags.writeable:
+        # materialize into RAM and make it writable
+        arr = np.array(arr, copy=True)
+    return arr
 
 def _np_load(path, dtype=None, mmap=True):
     """Load .npy with optional dtype cast and memory map."""
@@ -143,19 +161,34 @@ class DDACSNPYStream(Dataset):
         sid = self.ids[index]
         P = _paths_for_id(self.root, sid)
 
-        # Load arrays (memory-mapped to be light on RAM)
-        x   = torch.from_numpy(_np_load(P["x"],   np.float32))
-        pos = torch.from_numpy(_np_load(P["pos"], np.float32))
-        y   = torch.from_numpy(_np_load(P["y"],   np.float32))
+        # Load arrays (copy only if read-only to avoid PyTorch warning)
+        x   = torch.from_numpy(_np_load_writable(P["x"],   np.float32))
+        pos = torch.from_numpy(_np_load_writable(P["pos"], np.float32))
+        y   = torch.from_numpy(_np_load_writable(P["y"],   np.float32))
 
-        ei_np  = _np_load(P["edge_index"],      np.int64)
-        ea_np  = _np_load(P["edge_attr"],       np.float32)
-        eei_np = _np_load(P["edge_edge_index"], np.int64)
+        ei_np  = _np_load_writable(P["edge_index"],      np.int64)
+        ea_np  = _np_load_writable(P["edge_attr"],       np.float32)
+        eei_np = _np_load_writable(P["edge_edge_index"], np.int64)
 
-        # Normalize shapes/dtypes for indices
-        edge_index = _to_long_2x(torch.as_tensor(ei_np))     # (2, E)
-        edge_attr  = torch.as_tensor(ea_np, dtype=torch.float32)  # (E, 31)
-        eei        = _to_long_2x(torch.as_tensor(eei_np))    # (2, M)
+        edge_index = _to_long_2x(torch.from_numpy(ei_np))                # (2, E), long later
+        edge_attr  = torch.from_numpy(ea_np).to(torch.float32)           # (E, 31)
+        eei        = _to_long_2x(torch.from_numpy(eei_np))               # (2, M)
+
+
+
+        # # Load arrays (memory-mapped to be light on RAM)
+        # x   = torch.from_numpy(_np_load(P["x"],   np.float32))
+        # pos = torch.from_numpy(_np_load(P["pos"], np.float32))
+        # y   = torch.from_numpy(_np_load(P["y"],   np.float32))
+
+        # ei_np  = _np_load(P["edge_index"],      np.int64)
+        # ea_np  = _np_load(P["edge_attr"],       np.float32)
+        # eei_np = _np_load(P["edge_edge_index"], np.int64)
+
+        # # Normalize shapes/dtypes for indices
+        # edge_index = _to_long_2x(torch.as_tensor(ei_np))     # (2, E)
+        # edge_attr  = torch.as_tensor(ea_np, dtype=torch.float32)  # (E, 31)
+        # eei        = _to_long_2x(torch.as_tensor(eei_np))    # (2, M)
 
         # Build LineGraphData (not plain Data!)
         d = LineGraphData()
@@ -169,13 +202,14 @@ class DDACSNPYStream(Dataset):
 
         # Optional extras
         if os.path.exists(P["edge_index_2"]):
-            ei2_np = _np_load(P["edge_index_2"], np.int64)
-            t = torch.as_tensor(ei2_np)
+            ei2_np = _np_load_writable(P["edge_index_2"], np.int64)
+            t = torch.from_numpy(ei2_np)
             if t.dim() == 2 and t.size(-1) == 2:
                 t = t.t().contiguous()
             d.edge_index_2 = t.long()
+
         if os.path.exists(P["node_index"]):
-            d.node_index = torch.from_numpy(_np_load(P["node_index"], np.int64)).long()
+            d.node_index = torch.from_numpy(_np_load_writable(P["node_index"], np.int64)).long()
 
         # IMPORTANT: expose counts so __inc__ knows how to offset batched graphs
         d.num_nodes = int(x.size(0))

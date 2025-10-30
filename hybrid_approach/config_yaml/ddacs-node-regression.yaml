@@ -31,7 +31,8 @@ model:
   type: GritTransformer
   # loss_fun: mse
   loss_fun: mse_combined_with_laplacian
-  laplace_lambda: 5e-2         
+  alpha: 0.9
+  beta: 0.1        
   laplace_normalized: True     # normalized Laplacian for degree-robustness
   laplace_norm_mode: per_node  # keeps magnitude stable across graphs
   laplace_on_residuals: True   # set true to smooth errors instead of predictions                

@@ -66,7 +66,8 @@ def laplacian_energy(pred, edge_index, norm_mode, node_batch, edge_weight = None
 def mse_laplacian_loss(pred, true, batch):
 
     # Reads hyper-params from YAML
-    lam = float(getattr(cfg.model, 'laplace_lambda', 1e-3))
+    alpha = float(getattr(cfg.model, 'alpha', 0.9))
+    beta = float(getattr(cfg.model, 'beta', 0.1))
     use_norm = bool(getattr(cfg.model, 'laplace_normalized', True))
     norm_mode = getattr(cfg.model, 'laplace_norm_mode', 'per_edge')
     on_residuals = bool(getattr(cfg.model, 'laplace_on_residuals', False))
@@ -93,7 +94,7 @@ def mse_laplacian_loss(pred, true, batch):
         #print(f"signal (pred):{signal}")
 
     lap = laplacian_energy(signal, batch.edge_index, node_batch=getattr(batch, 'batch', None), normalized=use_norm, norm_mode=norm_mode)
-    loss = mse + lam * lap
+    loss = alpha * mse + beta * lap
     # print(f"loss: {loss}")
     # print(f"pred: {pred}")
     return loss, pred
