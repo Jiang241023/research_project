@@ -116,17 +116,17 @@ def load_dataset_master(fmt, name, dataset_dir):
     print(f"val[:10]:\n{dataset.data.val_graph_index[:10]}")
     print(f"test[:10]:\n{dataset.data.test_graph_index[:10]}")
 
-    idx_tr = int(dataset.data.train_graph_index[0])
-    idx_va = int(dataset.data.val_graph_index[0])
-    idx_te = int(dataset.data.test_graph_index[0])
+    idx_train = int(dataset.data.train_graph_index[0])
+    idx_val = int(dataset.data.val_graph_index[0])
+    idx_test = int(dataset.data.test_graph_index[0])
 
-    s_tr, s_va, s_te = dataset[idx_tr], dataset[idx_va], dataset[idx_te]
+    s_train, s_val, s_test = dataset[idx_train], dataset[idx_val], dataset[idx_test]
 
-    print("TRAIN → idx:", idx_tr, "sample_id:", getattr(s_tr, "sample_id", None))
-    print("VAL   → idx:", idx_va, "sample_id:", getattr(s_va, "sample_id", None))
-    print("TEST  → idx:", idx_te, "sample_id:", getattr(s_te, "sample_id", None))
+    print("TRAIN → idx:", idx_train, "sample_id:", getattr(s_train, "sample_id", None))
+    print("VAL   → idx:", idx_val, "sample_id:", getattr(s_val, "sample_id", None))
+    print("TEST  → idx:", idx_test, "sample_id:", getattr(s_test, "sample_id", None))
 
-    for tag, d in [("train", s_tr), ("val", s_va), ("test", s_te)]:
+    for tag, d in [("train", s_train), ("val", s_val), ("test", s_test)]:
         x_shape   = None if getattr(d, "x", None) is None else tuple(d.x.shape)
         pos_shape = None if getattr(d, "pos", None) is None else tuple(d.pos.shape)
         y_shape   = None if getattr(d, "y", None) is None else tuple(d.y.shape)

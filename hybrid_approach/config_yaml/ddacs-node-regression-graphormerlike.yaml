@@ -23,7 +23,7 @@ dataset:
 
 train:
   mode: train
-  batch_size: 8              
+  batch_size: 16              
   eval_period: 1
   ckpt_best: True
   ckpt_clean: True
@@ -32,7 +32,8 @@ model:
   type: GraphormerEdgeTransformer
   # loss_fun: mse
   loss_fun: mse_combined_with_laplacian
-  laplace_lambda: 1e-1         # try 1e-4 ~ 3e-3
+  alpha: 0.8
+  beta: 0.2 
   laplace_normalized: True     # normalized Laplacian for degree-robustness
   laplace_norm_mode: per_edge  # keeps magnitude stable across graphs
   laplace_on_residuals: True  # set true to smooth errors instead of predictions                 

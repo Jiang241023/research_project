@@ -330,11 +330,10 @@ def features_per_sample(ddacs, out_dir: Path, action="save_npz"):
         t0 = time.perf_counter()
         for i in tqdm(range(n), desc="Saving features (NPZ bundle per sample)"):
             sample_id, _, h5_path = ddacs[i]    
-            (X, Y, EI, EF,POS, NODE_IDX, EI_2, EEI) = prepare_sample(h5_path)
+            (X, Y, EI, EF, POS, NODE_IDX, EI_2, EEI) = prepare_sample(h5_path)
 
-
-            # One compressed NPZ per sample (keys match your previous filenames)
-            np.savez_compressed(
+            # One NPZ per sample (keys match your previous filenames)
+            np.savez(
             npz_path(out_dir, sample_id),
             new_concatenated_features=X,
             node_displacement=Y,
@@ -348,7 +347,7 @@ def features_per_sample(ddacs, out_dir: Path, action="save_npz"):
         total_time = time.perf_counter() - t0
         print("\n=== Save summary ===")
         print(f"dir: {out_dir}")
-        print("format: NPZ (one compressed bundle per sample)")
+        print("format: NPZ (one bundle per sample)")
         print(f"total time: {total_time:.2f} s")
 
 
