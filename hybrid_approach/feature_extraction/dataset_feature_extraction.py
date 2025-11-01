@@ -330,7 +330,7 @@ def features_per_sample(ddacs, out_dir: Path, action="save_npz"):
         t0 = time.perf_counter()
         for i in tqdm(range(n), desc="Saving features (NPZ bundle per sample)"):
             sample_id, _, h5_path = ddacs[i]    
-            (X, Y, EI, EF, POS, NODE_IDX, EI_2, EEI) = prepare_sample(h5_path)
+            (X, Y, EI, EF,POS, NODE_IDX, EI_2, EEI) = prepare_sample(h5_path)
 
             # One NPZ per sample (keys match your previous filenames)
             np.savez(

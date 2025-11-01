@@ -67,36 +67,52 @@ class Attention(nn.Module):
         E = t.size(0) # number of edge tokens
         return t.view(E, self.H, self.D)
 
-    def forward(self, edge_features, e2e, attn_bias):
-        E = edge_features.size(0) # 
+    def forward(self, edge_features, e2e):
+        E = edge_features.size(0)
         src_e, dst_e = e2e  # (M,), (M,)
 
-        q = self.split_heads(self.Wq(edge_features))  # (E, H, D)
-        k = self.split_heads(self.Wk(edge_features))  # (E, H, D)
-        v = self.split_heads(self.Wv(edge_features))  # (E, H, D)
+        # (E,H,D)
+        q = self.split_heads(self.Wq(edge_features))
+        k = self.split_heads(self.Wk(edge_features))
+        v = self.split_heads(self.Wv(edge_features))
 
-        q_dst = q.index_select(0, dst_e)     # (M, H, D)
-        k_src = k.index_select(0, src_e)     # (M, H, D)
+        out = edge_features.new_zeros(E, self.H, self.D)
 
-        # logits per (src,dst,head): dot over D
-        logits = (q_dst * k_src).sum(-1) * self.scale  # (M, H)
-        if attn_bias is not None:
-            logits = logits + attn_bias                # broadcastable to (M, H)
+        # ---- stream over heads ----
+        for h in range(self.H):
+            qh = q[:, h, :]                     # (E, D)
+            kh = k[:, h, :]                     # (E, D)
+            vh = v[:, h, :]                     # (E, D)
 
-        # softmax over sources for each destination edge-token
-        attn = pyg_softmax(logits, index=dst_e, num_nodes=E)  # (M, H)
-        attn = self.dropout(attn)
+            # logits on the full set (M,) — small enough to keep whole
+            q_dst = qh.index_select(0, dst_e)   # (M, D)
+            k_src = kh.index_select(0, src_e)   # (M, D)
+            logits_h = (q_dst * k_src).sum(-1) * self.scale  # (M,)
 
-        # weighted sum of V[src] into each dst
-        v_src = v.index_select(0, src_e)              # (M, H, D)
-        msg = v_src * attn.unsqueeze(-1)              # (M, H, D)
+            # softmax over sources grouped by dst edge
+            attn_h = pyg_softmax(logits_h, index=dst_e, num_nodes=E)  # (M,)
 
-        out = torch.zeros_like(v)                     # (E, H, D)
-        scatter(msg, dst_e, dim=0, out=out, reduce='add')  # sum per dst
+            del q_dst, k_src, logits_h  # free early
 
-        # merge heads
-        out = out.reshape(E, self.E_dim)              # (E, embed_dim)
-        return self.out(out)  
+            # ---- CHUNKED message build & scatter: avoid (M,D) peak ----
+            CHUNK = 10000  # tune to GPU; smaller ⇒ lower peak mem
+            m = src_e.numel()
+            for i0 in range(0, m, CHUNK):
+                i1 = min(i0 + CHUNK, m)
+                se = src_e[i0:i1]
+                de = dst_e[i0:i1]
+
+                v_src_chunk = vh.index_select(0, se)              # (m', D)
+                attn_chunk  = attn_h[i0:i1].unsqueeze(-1)         # (m', 1)
+                msg_chunk   = v_src_chunk * attn_chunk            # (m', D)
+                scatter(msg_chunk, de, dim=0, out=out[:, h, :], reduce='add')
+
+                del v_src_chunk, attn_chunk, msg_chunk  # free per chunk
+
+            del qh, kh, vh, attn_h  # free per head
+
+        out = out.reshape(E, self.E_dim)  # (E, embed_dim)
+        return self.out(out)
 
 # Graphormer Edge Layer (pre-LN)
 @register_layer("GraphormerEdge")
@@ -167,14 +183,10 @@ class GraphormerEdgeLayer(nn.Module):
         device = edge_in.device
         src_e, dst_e = resolve_e2e(batch, E=E, device=device)
 
-        # Optional Graphormer additive bias on edge attention logits
-        # Expect shape (M, H); set to None if don't use it.
-        attn_bias = getattr(batch, "edge_edge_bias", None)
-
         # Eq. (8): h'_e = MHA(LN(h_e)) + h_e 
         edge_residual = edge_in
         edge_norm = self.edge_layernorm_1(edge_in)
-        edge_attn = self.attn_e(edge_norm, (src_e, dst_e), attn_bias=attn_bias)  # (E, d)
+        edge_attn = self.attn_e(edge_norm, (src_e, dst_e))  # (E, d)
         edge_attn = self.drop_attn(edge_attn)
         if self.residual:
             updated_edge_features = edge_residual + edge_attn
@@ -192,9 +204,15 @@ class GraphormerEdgeLayer(nn.Module):
             edge_out = edge_ffn
 
         # Edge degree scaler
+        # log_deg_e = get_edge_log_deg(batch)                             # (E,1)
+        # h = torch.stack([edge_out, edge_out * log_deg_e], dim=-1)     # (E,d,2)
+        # edge_out = (h * self.deg_coef_edges).sum(dim=-1)              # (E,d)
+        # Edge degree scaler (memory-safe)
         log_deg_e = get_edge_log_deg(batch)                             # (E,1)
-        h = torch.stack([edge_out, edge_out * log_deg_e], dim=-1)     # (E,d,2)
-        edge_out = (h * self.deg_coef_edges).sum(dim=-1)              # (E,d)
+        log_deg_e = log_deg_e.to(edge_out.dtype)                        # avoid AMP dtype mismatches
+        coef0 = self.deg_coef_edges[..., 0]                             # (1,d)
+        coef1 = self.deg_coef_edges[..., 1]                             # (1,d)
+        edge_out = edge_out * coef0 + (edge_out * log_deg_e) * coef1    # (E,d)
 
         #  edge → node update 
         if self.update_nodes:
