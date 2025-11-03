@@ -17,34 +17,28 @@ def pyg_softmax(src, index, num_nodes=None):
     return out / out_sum
 
 def resolve_e2e(batch, E: int, device=None):
-    """
-    Return (src_e, dst_e) as 1D LongTensors on `device`.
-    Accepts either:
-      • batch.edge_edge_index with shape (2, M)  OR
-      • batch.eei with shape (M, 2)  (your saved format)
-    """
     e2e = None
     if hasattr(batch, "edge_edge_index"):
         e2e = batch.edge_edge_index
     elif hasattr(batch, "eei"):
         e2e = batch.eei
-        # if (M,2), transpose to (2,M)
         if e2e.dim() == 2 and e2e.size(1) == 2:
             e2e = e2e.t().contiguous()
     else:
-        # make an empty (2,0) index on the right device
         z = torch.empty(2, 0, dtype=torch.long, device=device)
         return z[0], z[1]
 
     if device is None:
-        device = getattr(e2e, "device", None)
+        device = e2e.device
     e2e = e2e.to(device=device, dtype=torch.long)
 
-    assert e2e.dim() == 2 and e2e.size(0) == 2, \
-        f"edge-edge index must be (2, M); got {tuple(e2e.size())}"
-    src_e, dst_e = e2e[0], e2e[1]
-
-    return src_e, dst_e
+    if not (e2e.dim() == 2 and e2e.size(0) == 2):
+        raise RuntimeError(
+            f"edge_edge_index must be (2, M). Got {tuple(e2e.size())}. "
+            "This usually means your Data class didn't define __cat_dim__/__inc__ "
+            "for 'edge_edge_index'. Use LineGraphData."
+        )
+    return e2e[0], e2e[1]
 
 class Attention(nn.Module):
     """
@@ -232,39 +226,13 @@ class GraphormerEdgeLayer(nn.Module):
         return batch
 
 @torch.no_grad()
-def get_edge_log_deg(batch, cache= True):
-    """
-    Return log(1 + deg_e) for each edge token as shape (E, 1).
-    Priority:
-      1) batch.log_deg_e (cached)
-      2) batch.deg_e     (cached raw degree)
-      3) compute from batch.edge_edge_index (line-graph)
-    """
-    if hasattr(batch, "log_deg_e"):
-        log_deg_e = batch.log_deg_e
-    elif hasattr(batch, "deg_e"):
-        deg_e = batch.deg_e.squeeze(-1) if batch.deg_e.dim() == 2 else batch.deg_e
-        log_deg_e = torch.log1p(deg_e)
-        if cache:
-            batch.log_deg_e = log_deg_e
-    else:
-        edge_edge_index = getattr(batch, "edge_edge_index", None)
-        if edge_edge_index is None:
-            E = batch.edge_attr.size(0) if hasattr(batch, "edge_attr") else batch.edge_index.size(1)
-            edge_edge_index = batch.edge_index
-            if cache:
-                batch.edge_edge_index = edge_edge_index
-
-        _, dst_e = edge_edge_index
-        if hasattr(batch, "edge_attr"):
-            E = batch.edge_attr.size(0)  
-        else:
-            E = int(dst_e.max().item()) + 1
-        ones = torch.ones_like(dst_e, dtype=torch.float)
-        deg_e = scatter_add(ones, dst_e, dim=0, dim_size=E)        # (E,)
-        log_deg_e = torch.log1p(deg_e)                              # (E,)
-        if cache:
-            batch.deg_e = deg_e
-            batch.log_deg_e = log_deg_e
-
-    return log_deg_e.view(-1, 1)  # (E,1)
+def get_edge_log_deg(batch, cache=True):
+    E = batch.edge_attr.size(0) if hasattr(batch, "edge_attr") else batch.edge_index.size(1)
+    src_e, dst_e = resolve_e2e(batch, E, device=batch.edge_index.device)
+    ones = torch.ones_like(dst_e, dtype=torch.float)
+    deg_e = scatter_add(ones, dst_e, dim=0, dim_size=E)  # (E,)
+    log_deg_e = torch.log1p(deg_e)                       # (E,)
+    if cache:
+        batch.deg_e = deg_e
+        batch.log_deg_e = log_deg_e
+    return log_deg_e.view(-1, 1)

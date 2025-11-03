@@ -212,7 +212,7 @@ if __name__ == '__main__':
 
         # Print model + minimal cfg (per-run)
         logging.info(model)
-        cfg.params = params_count(model)
+        cfg.params = params_count(model) 
         logging.info('Num parameters: %s', cfg.params)
 
         effective_run = cfg_diff(cfg, defaults_snapshot)
@@ -249,5 +249,5 @@ if __name__ == '__main__':
     logging.info(f"[*] All done: {t1} (total: {t1 - t0})")
 
 # Example runs:
-# python main.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression.yaml  wandb.use False accelerator "cuda:0" optim.max_epoch 5 seed 41 dataset.dir '/mnt/data/jiang'
+# python main.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression.yaml  wandb.use False accelerator "cuda:0" optim.max_epoch 10 seed 41 dataset.dir '/mnt/data/jiang'
 # python main.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression-graphormerlike.yaml  wandb.use False accelerator "cuda:0" optim.max_epoch 5 seed 41 dataset.dir '/mnt/data/jiang'

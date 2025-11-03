@@ -5,7 +5,6 @@ accelerator: "cuda:0"
 tensorboard_each_run: True
 
 dataset:
-  pe_transform_on_the_fly: True
   format: PyG-DDACSNPYStream     
   name: node-regression
   dir: /mnt/data/jiang          
@@ -19,12 +18,11 @@ dataset:
   edge_encoder: True
   edge_encoder_name: EdgeCentrality
   edge_encoder_bn: False
-  pe_transform_on_the_fly: True
-  max_samples: 1024
+  max_samples: None
 
 train:
   mode: train
-  batch_size: 8              
+  batch_size: 16              
   eval_period: 1
   ckpt_best: True
   ckpt_clean: True
@@ -33,7 +31,8 @@ model:
   type: GritTransformer
   # loss_fun: mse
   loss_fun: mse_combined_with_laplacian
-  laplace_lambda: 5e-2         
+  alpha: 0.8
+  beta: 0.2        
   laplace_normalized: True     # normalized Laplacian for degree-robustness
   laplace_norm_mode: per_node  # keeps magnitude stable across graphs
   laplace_on_residuals: True   # set true to smooth errors instead of predictions                

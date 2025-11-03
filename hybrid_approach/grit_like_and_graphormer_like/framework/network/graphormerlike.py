@@ -6,7 +6,6 @@ from torch_geometric.graphgym.models.gnn import GNNPreMP
 from torch_geometric.graphgym.models.layer import new_layer_config, BatchNorm1dNode
 import torch_geometric.graphgym.register as register
 
-
 class FeatureEncoder(nn.Module):
     def __init__(self, dim_in):
         super().__init__()
