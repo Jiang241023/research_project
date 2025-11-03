@@ -6,6 +6,7 @@ from torch_geometric.graphgym.models.gnn import GNNPreMP
 from torch_geometric.graphgym.models.layer import new_layer_config, BatchNorm1dNode
 import torch_geometric.graphgym.register as register
 
+
 class FeatureEncoder(nn.Module):
     def __init__(self, dim_in):
         super().__init__()
@@ -66,7 +67,6 @@ class GraphormerEdgeTransformer(nn.Module):
                 dropout=cfg.gt.dropout,
                 attn_dropout=cfg.gt.attn_dropout,
                 layer_norm=cfg.gt.layer_norm,
-                batch_norm=cfg.gt.batch_norm,
                 residual=True,
                 act=cfg.gnn.act,
                 update_nodes=cfg.gt.get("update_nodes", True),

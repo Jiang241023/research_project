@@ -40,27 +40,23 @@ model:
   only_mse: False             # !!! if set it to be true, the loss function will become mse!!!!
 gt:
   layer_type: GraphormerEdge
-  layers: 3
+  layers: 2
   n_heads: 2
   dim_hidden: 64
   dropout: 0.1
   attn_dropout: 0.1
-  layer_norm: False
-  batch_norm: True
-  update_e: True
+  layer_norm: True
 
 gnn:
   head: inductive_node_graphormerlke
   layers_pre_mp: 0  # 'pre–message passing' MLP
-  layers_post_mp: 3 # 'post–message passing' MLP
+  layers_post_mp: 2 # 'post–message passing' MLP
   dim_inner: 64
   dim_out: 3
-  batchnorm: True
   act: Gelu
   dropout: 0.0
   
 optim:
-  clip_grad_norm: True
   optimizer: adamW
   weight_decay: 1e-4
   base_lr: 0.0005

@@ -16,7 +16,7 @@ def pyg_softmax(src, index, num_nodes=None):
     out_sum = scatter_add(out, index, dim=0, dim_size=num_nodes)[index] + 1e-16
     return out / out_sum
 
-def resolve_e2e(batch, E: int, device=None):
+def resolve_e2e(batch, E, device=None):
     e2e = None
     if hasattr(batch, "edge_edge_index"):
         e2e = batch.edge_edge_index
@@ -127,7 +127,7 @@ class GraphormerEdgeLayer(nn.Module):
 
         # Attention 
         if layer_norm == True:
-            self.edge_layernorm_1 = nn.LayerNorm(self.model_dim) # A LayerNorm that will normalize each edge token’s feature vector (length = model_dim) before the attention (typical pre-LN pattern).
+            self.edge_layernorm_1 = nn.LayerNorm(self.model_dim) 
         else:
             self.edge_layernorm_1 = nn.Identity()
         self.attn_e = Attention(
