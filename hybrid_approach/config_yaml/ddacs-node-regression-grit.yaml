@@ -13,7 +13,7 @@ dataset:
   task_type: regression
   transductive: False
   node_encoder: True
-  node_encoder_name: DegreeCentrality
+  node_encoder_name: rrwp_linear
   node_encoder_bn: False
   edge_encoder: True
   edge_encoder_name: EdgeCentrality
@@ -63,10 +63,12 @@ gnn:
   layers_post_mp: 3 # 'post–message passing' MLP
   dim_inner: 64
   dim_out: 3
+  batchnorm: True
   act: relu
   dropout: 0.0
 
 optim:
+  clip_grad_norm: True
   optimizer: adamW
   weight_decay: 1e-4
   base_lr: 0.0005

@@ -45,9 +45,7 @@ gt:
   dim_hidden: 64
   dropout: 0.1
   attn_dropout: 0.1
-  layer_norm: False
-  batch_norm: True
-  update_e: True
+  layer_norm: True
 
 gnn:
   head: inductive_node_graphormerlke
@@ -55,12 +53,10 @@ gnn:
   layers_post_mp: 2 # 'post–message passing' MLP
   dim_inner: 64
   dim_out: 3
-  batchnorm: True
   act: Gelu
   dropout: 0.0
   
 optim:
-  clip_grad_norm: True
   optimizer: adamW
   weight_decay: 1e-4
   base_lr: 0.0005

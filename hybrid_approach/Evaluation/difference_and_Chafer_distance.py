@@ -6,19 +6,6 @@ from DDACSDataset import DDACSDataset
 from utils_DDACS import extract_mesh, extract_point_springback
 from scipy.spatial import cKDTree as KDTree
 
-
-# Config 
-OPERATION   = 10
-TIMESTEP    = 2
-pred_dir    = "/home/RUS_CIP/st186731/research_project/RP-3875/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression-fullsamples-10epochs-alpha0.8-beta0.2-grit_likewithlap/grit_like"
-data_dir    = Path("/mnt/ac142464/data/darus/")
-
-# save a one-row CSV with totals
-WRITE_CSV   = True
-save_dir    = Path("/home/RUS_CIP/st186731/research_project/RP-3875/hybrid_approach/difference_and_Chamfer_distance_output")
-save_dir.mkdir(parents=True, exist_ok=True)
-totals_csv_path = save_dir / "dataset_totals_grit_like_fullsamples_10e_alpha0.8_beta0.2_withlap.csv"
-
 #  Utils 
 def find_h5_by_id(dataset, sid):
     """Return (sim_id, metadata, h5_path) for the given string/int sample id."""
@@ -90,6 +77,17 @@ def scan_prediction_files(pred_dir):
 
 # Main 
 if __name__ == "__main__":
+    # Config 
+    OPERATION   = 10
+    TIMESTEP    = 2
+    pred_dir    = "/home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/graphormer_like-fullsamples-10epochs-alpha0.8-beta0.2-graphormer_likewithlap"
+    data_dir    = Path("/mnt/data/darus/")
+
+    # save a one-row CSV with totals
+    WRITE_CSV   = True
+    save_dir    = Path("/home/RUS_CIP/st186731/research_project/hybrid_approach/difference_and_Chamfer_distance_output")
+    save_dir.mkdir(parents=True, exist_ok=True)
+    totals_csv_path = save_dir / "dataset_totals_graphormer_like_fullsamples_15epoch_alpha0.8_beta0.2_withlap.csv"
     # Load dataset index
     dataset = DDACSDataset(data_dir, "h5")
     pairs = scan_prediction_files(pred_dir)
@@ -182,7 +180,14 @@ if __name__ == "__main__":
         ]
         with open(totals_csv_path, "w", encoding="utf-8") as f:
             f.write(",".join(headers) + "\n")
-            f.write(",".join(f"{v:.10f}" if isinstance(v, float) else str(v) for v in values) + "\n")
+            parts = []
+            for v in values:
+                if isinstance(v, (float, np.floating)):
+                    s = f"{v:.10f}"
+                else:
+                    s = str(v)
+                parts.append(s)
+            f.write(",".join(parts) + "\n")
         print(f"[OK] Wrote totals CSV → {totals_csv_path}")
 
 # Example runs:
