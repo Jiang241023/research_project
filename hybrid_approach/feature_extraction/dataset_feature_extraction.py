@@ -250,10 +250,10 @@ def features_per_sample(ddacs, out_dir, action="save_npz"):
     out_dir.mkdir(parents=True, exist_ok=True)
 
     if action == "save_npz":
-        exclude_ids = ["19044", "116133"]
+        exclude_ids = ["19044", "116133", "401371", "404386"]
         n = len(ddacs)
         t0 = time.perf_counter()
-        for i in tqdm(range(n), desc="Saving features (NPZ bundle per sample)"):
+        for i in tqdm(range(28000,n), desc="Saving features (NPZ bundle per sample)"):
             sample_id, _, h5_path = ddacs[i]  
 
             # skip unwanted ids

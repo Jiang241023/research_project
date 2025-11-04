@@ -85,7 +85,7 @@ if __name__ == "__main__":
 
     # save a one-row CSV with totals
     WRITE_CSV   = True
-    save_dir    = Path("/home/RUS_CIP/st186731/research_project/hybrid_approach/difference_and_Chamfer_distance_output")
+    save_dir    = Path("/home/RUS_CIP/st186731/research_project/hybrid_approach/Evaluation_output")
     save_dir.mkdir(parents=True, exist_ok=True)
     totals_csv_path = save_dir / "dataset_totals_graphormer_like_fullsamples_15epoch_alpha0.8_beta0.2_withlap.csv"
     # Load dataset index

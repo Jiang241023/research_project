@@ -6,8 +6,7 @@ tensorboard_each_run: True
 
 dataset:
   format: PyG-DDACSNPYStream
-  name: node-regression
-  dir: /mnt/data/jiang          
+  name: node-regression        
   task: graph
   split_mode: standard
   task_type: regression
@@ -19,7 +18,6 @@ dataset:
   edge_encoder_name: EdgeCentrality
   edge_encoder_bn: False
   max_samples: None
-
 
 train:
   mode: train
