@@ -18,7 +18,7 @@ def find_h5_by_id(dataset, sid):
 
 def nearest_neighbor_distances(query_points, reference_points):
     """Per-point NN distances from query_points to reference_points (L2).
-       KDTree:"k-dimensional tree.” It's a space-partitioning data structure that indexes points in ℝᵈ so you can answer nearest-neighbor queries much faster than a brute-force O(M·N) scan.
+       KDTree:"k-dimensional tree.” 
     """
     tree = KDTree(reference_points)
     distances, _ = tree.query(query_points, k=1, workers=-1)

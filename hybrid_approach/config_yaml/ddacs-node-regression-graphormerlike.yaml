@@ -1,12 +1,11 @@
 out_dir: results
 metric_best: mae # use validation MAE (mean absolute error) to pick the best epoch
 metric_agg: argmin # Use argmin for lower-is-better metrics (MAE, MSE, RMSE, CE/NLL).
-accelerator: "cuda:0"
 tensorboard_each_run: True
 
 dataset:
   format: PyG-DDACSNPYStream
-  name: node-regression        
+  name: node-regression     
   task: graph
   split_mode: standard
   task_type: regression
@@ -18,6 +17,7 @@ dataset:
   edge_encoder_name: EdgeCentrality
   edge_encoder_bn: False
   max_samples: None
+
 
 train:
   mode: train
@@ -38,8 +38,8 @@ model:
   only_mse: False             # !!! if set it to be true, the loss function will become mse!!!!
 gt:
   layer_type: GraphormerEdge
-  layers: 2
-  n_heads: 2
+  layers: 3
+  n_heads: 4
   dim_hidden: 64
   dropout: 0.1
   attn_dropout: 0.1
@@ -60,5 +60,5 @@ optim:
   base_lr: 0.0005
   max_epoch: 100
   scheduler: cosine_with_warmup
-  num_warmup_epochs: 5
+  num_warmup_epochs: 15
 

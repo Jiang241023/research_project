@@ -159,9 +159,6 @@ if __name__ == '__main__':
     # Set out_dir (based on cfg file name + optional tag)
     custom_set_out_dir(cfg, args.cfg_file, cfg.name_tag)
 
-    # Dump the full (merged) cfg to disk as usual
-    dump_cfg(cfg)
-
     # Print a minimal diff vs defaults + a pruned version
     effective = cfg_diff(cfg, defaults_snapshot)
     pruned = prune_irrelevant(effective, cfg)
@@ -250,7 +247,8 @@ if __name__ == '__main__':
 
 # Example runs:
 # op10
-# python main.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression.yaml  wandb.use False accelerator "cuda:0" optim.max_epoch 15 seed 41 dataset.dir '/mnt/data/jiang'
+# python main.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression-grit.yaml  wandb.use False accelerator "cuda:0" optim.max_epoch 15 seed 41 dataset.dir '/mnt/data/jiang'
+# python main.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression-grit.yaml  wandb.use False accelerator "cuda:0" optim.max_epoch 15 seed 41 dataset.dir '/mnt/data/jiang'
 # python main.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression-graphormerlike.yaml  wandb.use False accelerator "cuda:0" optim.max_epoch 15 seed 41 dataset.dir '/mnt/data/jiang'
 
 # op20
