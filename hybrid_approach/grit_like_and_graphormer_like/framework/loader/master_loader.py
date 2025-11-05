@@ -73,6 +73,7 @@ def log_loaded_dataset(dataset, fmt, name):
         logging.info(f"  approx avg num_edges/graph: {avg_edges}")
     except Exception as e:
         logging.info(f"  approx avg num_nodes/edges: n/a ({e})")
+    
 
 
 @register_loader("custom_master_loader")

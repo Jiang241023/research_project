@@ -1,3 +1,6 @@
+'''
+    The RRWP encoder for GRIT (ours)
+'''
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -55,50 +58,43 @@ def full_edge_index(edge_index, batch=None):
 
 
 @register_node_encoder('rrwp_linear')
-class RRWPLinearNodeEncoder(nn.Module):
+class RRWPLinearNodeEncoder(torch.nn.Module):
     """
-    RRWP -> Linear(out_dim) (+ optional BN/LN), added to batch.x.
-    GraphGym passes ONE arg here: out_dim = cfg.gnn.dim_inner.
+        FC_1(RRWP) + FC_2 (Node-attr)
+        note: FC_2 is given by the Typedict encoder of node-attr in some cases
+        Parameters:
+        num_classes - the number of classes for the embedding mapping to learn
     """
-    def __init__(self, out_dim, use_bias=False, batchnorm=False, layernorm=False, pe_name="rrwp"):
+    def __init__(self, emb_dim, out_dim, use_bias=False, batchnorm=False, layernorm=False, pe_name="rrwp"):
         super().__init__()
+        self.batchnorm = batchnorm
+        self.layernorm = layernorm
         self.name = pe_name
-        self.out_dim = int(out_dim)
-        self.use_bias = use_bias
-        self.batchnorm = bool(batchnorm)
-        self.layernorm = bool(layernorm)
 
-        self.fc = None  # will be created on first forward when we know in_features
+        self.fc = nn.Linear(emb_dim, out_dim, bias=use_bias)
+        torch.nn.init.xavier_uniform_(self.fc.weight)
 
         if self.batchnorm:
-            self.bn = nn.BatchNorm1d(self.out_dim)
-        else:
-            self.bn = None
-
+            self.bn = nn.BatchNorm1d(out_dim)
         if self.layernorm:
-            self.ln = nn.LayerNorm(self.out_dim)
-        else:
-            self.ln = None
-
-    def _maybe_init(self, in_features, device):
-        if self.fc is None:
-            self.fc = nn.Linear(in_features, self.out_dim, bias=self.use_bias).to(device)
-            nn.init.xavier_uniform_(self.fc.weight)
-            if self.fc.bias is not None:
-                nn.init.zeros_(self.fc.bias)
+            self.ln = nn.LayerNorm(out_dim)
 
     def forward(self, batch):
-        rrwp = batch[self.name] if self.name in batch else batch[f"{self.name}"]
-        # rrwp: [N, emb_dim]
-        self._maybe_init(rrwp.size(-1), rrwp.device)
+        # Encode just the first dimension if more exist
+        rrwp = batch[f"{self.name}"]
+        rrwp = self.fc(rrwp)
 
-        out = self.fc(rrwp)
-        if self.bn is not None:
-            out = self.bn(out)
-        if self.ln is not None:
-            out = self.ln(out)
+        if self.batchnorm:
+            rrwp = self.bn(rrwp)
 
-        batch.x = batch.x + out if hasattr(batch, "x") and batch.x is not None else out
+        if self.layernorm:
+            rrwp = self.ln(rrwp)
+
+        if "x" in batch:
+            batch.x = batch.x + rrwp
+        else:
+            batch.x = rrwp
+
         return batch
 
 

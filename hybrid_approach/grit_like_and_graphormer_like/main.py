@@ -15,7 +15,7 @@ from framework.optimizer.extra_optimizers import ExtendedSchedulerConfig
 
 from torch_geometric.graphgym.cmd_args import parse_args
 from torch_geometric.graphgym.config import (
-    cfg, dump_cfg, set_cfg, load_cfg, makedirs_rm_exist
+    cfg, set_cfg, load_cfg, makedirs_rm_exist
 )
 from torch_geometric.graphgym.loader import create_loader
 from torch_geometric.graphgym.logger import set_printing
@@ -159,9 +159,6 @@ if __name__ == '__main__':
     # Set out_dir (based on cfg file name + optional tag)
     custom_set_out_dir(cfg, args.cfg_file, cfg.name_tag)
 
-    # Dump the full (merged) cfg to disk as usual
-    dump_cfg(cfg)
-
     # Print a minimal diff vs defaults + a pruned version
     effective = cfg_diff(cfg, defaults_snapshot)
     pruned = prune_irrelevant(effective, cfg)
@@ -249,5 +246,11 @@ if __name__ == '__main__':
     logging.info(f"[*] All done: {t1} (total: {t1 - t0})")
 
 # Example runs:
-# python main.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression.yaml  wandb.use False accelerator "cuda:0" optim.max_epoch 10 seed 41 dataset.dir '/mnt/data/jiang'
+# op10
+# python main.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression-grit.yaml  wandb.use False accelerator "cuda:0" optim.max_epoch 15 seed 41 dataset.dir '/mnt/data/jiang'
+# python main.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression-grit.yaml  wandb.use False accelerator "cuda:0" optim.max_epoch 15 seed 41 dataset.dir '/mnt/data/jiang'
 # python main.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression-graphormerlike.yaml  wandb.use False accelerator "cuda:0" optim.max_epoch 15 seed 41 dataset.dir '/mnt/data/jiang'
+
+# op20
+# python main.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression.yaml  wandb.use False accelerator "cuda:0" optim.max_epoch 15 seed 41 dataset.dir '/mnt/data/jiang/op20'
+# python main.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression-graphormerlike.yaml  wandb.use False accelerator "cuda:0" optim.max_epoch 15 seed 41 dataset.dir '/mnt/data/jiang/op20'

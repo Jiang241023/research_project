@@ -18,7 +18,7 @@ def find_h5_by_id(dataset, sid):
 
 def nearest_neighbor_distances(query_points, reference_points):
     """Per-point NN distances from query_points to reference_points (L2).
-       KDTree:"k-dimensional tree.” It's a space-partitioning data structure that indexes points in ℝᵈ so you can answer nearest-neighbor queries much faster than a brute-force O(M·N) scan.
+       KDTree:"k-dimensional tree.” 
     """
     tree = KDTree(reference_points)
     distances, _ = tree.query(query_points, k=1, workers=-1)
@@ -85,7 +85,7 @@ if __name__ == "__main__":
 
     # save a one-row CSV with totals
     WRITE_CSV   = True
-    save_dir    = Path("/home/RUS_CIP/st186731/research_project/hybrid_approach/difference_and_Chamfer_distance_output")
+    save_dir    = Path("/home/RUS_CIP/st186731/research_project/hybrid_approach/Evaluation_output")
     save_dir.mkdir(parents=True, exist_ok=True)
     totals_csv_path = save_dir / "dataset_totals_graphormer_like_fullsamples_15epoch_alpha0.8_beta0.2_withlap.csv"
     # Load dataset index

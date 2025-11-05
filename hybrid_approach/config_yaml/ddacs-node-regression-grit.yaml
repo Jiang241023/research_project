@@ -13,12 +13,19 @@ dataset:
   task_type: regression
   transductive: False
   node_encoder: True
-  node_encoder_name: rrwp_linear
+  node_encoder_name: LinearNode
   node_encoder_bn: False
   edge_encoder: True
-  edge_encoder_name: EdgeCentrality
+  edge_encoder_name: LinearEdge
   edge_encoder_bn: False
   max_samples: None
+
+posenc_RRWP:
+  enable: True
+  ksteps: 5
+  add_identity: True
+  add_node_attr: False
+  add_inverse: False
 
 train:
   mode: train
@@ -65,7 +72,7 @@ gnn:
   dim_out: 3
   batchnorm: True
   act: relu
-  dropout: 0.0
+  dropout: 0.1
 
 optim:
   clip_grad_norm: True
@@ -74,4 +81,4 @@ optim:
   base_lr: 0.0005
   max_epoch: 100
   scheduler: cosine_with_warmup
-  num_warmup_epochs: 5
+  num_warmup_epochs: 15

@@ -1,13 +1,11 @@
 out_dir: results
 metric_best: mae # use validation MAE (mean absolute error) to pick the best epoch
 metric_agg: argmin # Use argmin for lower-is-better metrics (MAE, MSE, RMSE, CE/NLL).
-accelerator: "cuda:0"
 tensorboard_each_run: True
 
 dataset:
   format: PyG-DDACSNPYStream     
-  name: node-regression
-  dir: /mnt/data/jiang          
+  name: node-regression  
   task: graph
   split_mode: standard
   task_type: regression
@@ -20,19 +18,22 @@ dataset:
   edge_encoder_bn: False
   max_samples: None
 
+posenc_RRWP:
+  enable: False
+  
 train:
   mode: train
-  batch_size: 16              
+  batch_size: 16             
   eval_period: 1
   ckpt_best: True
-  ckpt_clean: True
+  ckpt_clean: False
 
 model:
   type: GritTransformer
   # loss_fun: mse
   loss_fun: mse_combined_with_laplacian
-  alpha: 0.8
-  beta: 0.2        
+  alpha: 1
+  beta: 1     
   laplace_normalized: True     # normalized Laplacian for degree-robustness
   laplace_norm_mode: per_node  # keeps magnitude stable across graphs
   laplace_on_residuals: True   # set true to smooth errors instead of predictions                
@@ -41,7 +42,7 @@ model:
 gt:
   layer_type: GritTransformer
   layers: 3
-  n_heads: 2
+  n_heads: 4
   dim_hidden: 64
   dropout: 0.1
   attn_dropout: 0.1
@@ -63,13 +64,15 @@ gnn:
   layers_post_mp: 3 # 'post–message passing' MLP
   dim_inner: 64
   dim_out: 3
+  batchnorm: True
   act: relu
   dropout: 0.0
 
 optim:
+  clip_grad_norm: True
   optimizer: adamW
   weight_decay: 1e-4
   base_lr: 0.0005
   max_epoch: 100
   scheduler: cosine_with_warmup
-  num_warmup_epochs: 5
+  num_warmup_epochs: 15

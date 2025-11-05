@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 # Get concatenated_strainstressthickness_features
-def load_element_features(h5_path, component="blank", timestep=-1, op_form=20):
+def load_element_features(h5_path, timestep, op_form, component="blank"):
     with h5py.File(h5_path, "r") as f:
         comp = f[f"OP{op_form}"][component]
         stress_t = comp["element_shell_stress"][timestep]  # (m,3,6)
@@ -34,7 +34,7 @@ def load_element_features(h5_path, component="blank", timestep=-1, op_form=20):
     return concatenated_features  # (m,31)
 
 # Get quad mesh
-def load_quad_mesh(h5_path, component="blank", op_form=20, timestep = -1):
+def load_quad_mesh(h5_path,  op_form, timestep, component="blank"):
     node_coords, triangles = extract_mesh(h5_path, operation=op_form, component=component, timestep = timestep)
     #print(f"the shape of triangles:\n {triangles.shape}") # (22050, 3)
     #print(f"first ten elements of triangles:\n {triangles[:10]}")
@@ -74,7 +74,7 @@ def element_to_node_features(num_nodes, triangles, elem_features):
     return average_node_features
 
 # Get displacement
-def load_displacement_op10(h5_path, operation = 20):
+def load_displacement_op10(h5_path, operation):
     _, displacement_vectors = extract_point_springback(h5_path, operation)  
     #print(f"the shape of displacement_vectors:\n {displacement_vectors.shape}")
     return displacement_vectors.astype(np.float32)  #  (11236, 3)
@@ -205,19 +205,19 @@ def build_edge_edge_index(edge_index, num_nodes = None):
     e2e = np.unique(e2e, axis=0)
     return e2e
 
-def prepare_sample(h5_path, component="blank", op_form=20, timestep=1):
+def prepare_sample(h5_path,op_form, timestep, component="blank"):
     # 1) per-element features (m=11025) → per-triangle features (2m=22050)
-    concatenated_features = load_element_features(h5_path, component, timestep, op_form)  # (11025, 31)
+    concatenated_features = load_element_features(h5_path = h5_path, timestep = timestep, op_form = op_form, component = "blank")  # (11025, 31)
     print(f"the shape of concatenated_features:{concatenated_features.shape}")
     repeated_elem_feats = np.repeat(concatenated_features, 2, axis=0)                     # (22050, 31)
 
     # 2) mesh triangles and node coords
-    node_coords, triangles = load_quad_mesh(h5_path, component, op_form, timestep)        # triangles: (22050, 3), coords: (N,3)
+    node_coords, triangles = load_quad_mesh(h5_path, op_form, timestep, component)        # triangles: (22050, 3), coords: (N,3)
     print(f"the shape of node_coords:{node_coords.shape}")
     print(f"the shape of triangles:{triangles.shape}")
 
     # 3) node-level displacement (OP10)
-    raw_displacement = load_displacement_op10(h5_path)                                     # (N, 3)
+    raw_displacement = load_displacement_op10(h5_path, op_form)                                     # (N, 3)
     print(f"the shape of raw_displacement:{raw_displacement.shape}")
     num_nodes = raw_displacement.shape[0]
     print(f"the num_nodes:{num_nodes}")
@@ -246,11 +246,14 @@ def prepare_sample(h5_path, component="blank", op_form=20, timestep=1):
 def npz_path(out_dir, sample_id):
     return out_dir / f"{sample_id}.npz"
 
-def features_per_sample(ddacs, out_dir, action="save_npz"):
+def features_per_sample(ddacs, out_dir, action="save_npz", op_form=20, timestep = -1, sample_to_check = "16039"):
     out_dir.mkdir(parents=True, exist_ok=True)
 
     if action == "save_npz":
-        exclude_ids = ["19044", "116133"]
+        if op_form == 20:
+            exclude_ids = ["19044", "116133", "401371", "404386"]
+        else:
+            exclude_ids =[]
         n = len(ddacs)
         t0 = time.perf_counter()
         for i in tqdm(range(n), desc="Saving features (NPZ bundle per sample)"):
@@ -260,7 +263,7 @@ def features_per_sample(ddacs, out_dir, action="save_npz"):
             if str(sample_id) in exclude_ids:         
                 continue
               
-            (X, Y, EI, EF,POS, NODE_IDX, EI_2, EEI) = prepare_sample(h5_path)
+            (X, Y, EI, EF,POS, NODE_IDX, EI_2, EEI) = prepare_sample(h5_path, op_form=op_form, timestep = timestep)
 
             # One NPZ per sample (keys match your previous filenames)
             np.savez(
@@ -282,7 +285,7 @@ def features_per_sample(ddacs, out_dir, action="save_npz"):
 
 
     elif action == "check_npz":
-        sample_to_check = "16039" # change to any ID you saved
+        
         npz_file = npz_path(out_dir, sample_to_check)
         if not npz_file.exists():
             raise FileNotFoundError(f"{npz_file} not found; run with action='save_npz' first.")
@@ -317,8 +320,16 @@ if __name__ == '__main__':
     dataset = DDACSDataset(data_dir, "h5")
     print(f"Loaded {len(dataset)} simulations")
 
-    # Add the save path
-    OUT_DIR = Path("/mnt/data/jiang/op20")
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    # Add the save path for op10
+    OUT_DIR_1 = Path("/mnt/data/jiang")
+    OUT_DIR_1.mkdir(parents=True, exist_ok=True)
     # Run it
-    features_per_sample(dataset, OUT_DIR, action="save_npz")
+    features_per_sample(dataset, OUT_DIR_1, action="save_npz", op_form=10, timestep = 3, sample_to_check = "16039")
+    print("------------------------------------------")
+    print("------------------------------------------")
+    print("------------------------------------------")
+    # Add the save path for op20
+    OUT_DIR_2 = Path("/mnt/data/jiang/op20")
+    OUT_DIR_2.mkdir(parents=True, exist_ok=True)
+    # Run it
+    features_per_sample(dataset, OUT_DIR_2, action="save_npz", op_form=20, timestep = -1, sample_to_check = "16039")
