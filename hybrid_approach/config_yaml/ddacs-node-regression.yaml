@@ -18,6 +18,9 @@ dataset:
   edge_encoder_bn: False
   max_samples: None
 
+posenc_RRWP:
+  enable: False
+  
 train:
   mode: train
   batch_size: 16             

@@ -11,7 +11,7 @@ NPZ_SUFFIX = ".npz"
 
 
 # - Utilities
-def _list_ids(root: str | Path):
+def _list_ids(root):
     """
     Return sorted numeric IDs from NPZ bundles named '<ID>.npz'.
     """
@@ -25,11 +25,11 @@ def _list_ids(root: str | Path):
     return ids
 
 
-def npz_path(root: str | Path, sid: int | str) -> Path:
+def npz_path(root, sid):
     return Path(root) / f"{sid}{NPZ_SUFFIX}"
 
 
-def ensure_writable(arr: np.ndarray) -> np.ndarray:
+def ensure_writable(arr) :
     """Guarantee a writable ndarray (PyTorch warns on read-only)."""
     if not isinstance(arr, np.ndarray):
         arr = np.array(arr)
@@ -38,7 +38,7 @@ def ensure_writable(arr: np.ndarray) -> np.ndarray:
     return arr
 
 
-def to_long_2x(t: torch.Tensor) -> torch.Tensor:
+def to_long_2x(t):
     """
     Ensure an index tensor is shape (2, M) and dtype long.
     Accepts (M, 2) or (2, M); returns (2, M).
@@ -127,6 +127,7 @@ class DDACSNPYStream(Dataset):
         self.data = Data()
         self._data = self.data
         self.name = "DDACSNPYStream"
+
         # Attach RRWP pre-transform if enabled in cfg and not already set
         if getattr(cfg, "posenc_RRWP", None) and getattr(cfg.posenc_RRWP, "enable", False):
             rrwp_t = ComputePosencStat(pe_types=['RRWP'], is_undirected=True, cfg=cfg)
