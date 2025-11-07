@@ -2,6 +2,8 @@ import numpy as np
 import torch.nn.functional as F
 from functools import partial
 from .rrwp import add_full_rrwp
+from torch_geometric.transforms import BaseTransform
+from torch_geometric.data import Data, HeteroData
 
 
 def compute_posenc_stats(data, pe_types, is_undirected, cfg):
@@ -43,18 +45,19 @@ def compute_posenc_stats(data, pe_types, is_undirected, cfg):
 
     return data
 
-from torch_geometric.transforms import BaseTransform
-from torch_geometric.data import Data, HeteroData
 
 class ComputePosencStat(BaseTransform):
     def __init__(self, pe_types, is_undirected, cfg):
+        super().__init__()
         self.pe_types = pe_types
         self.is_undirected = is_undirected
         self.cfg = cfg
 
-    def __call__(self, data: Data) -> Data:
-        data = compute_posenc_stats(data, pe_types=self.pe_types,
-                                    is_undirected=self.is_undirected,
-                                    cfg=self.cfg
-                                    )
-        return data
+    def forward(self, data: Data) -> Data:
+        # BaseTransform.__call__ will invoke this
+        return compute_posenc_stats(
+            data,
+            pe_types=self.pe_types,
+            is_undirected=self.is_undirected,
+            cfg=self.cfg,
+        )

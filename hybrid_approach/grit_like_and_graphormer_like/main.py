@@ -27,8 +27,6 @@ from torch_geometric.graphgym.utils.comp_budget import params_count
 from torch_geometric.graphgym.utils.device import auto_select_device
 from torch_geometric.graphgym.register import train_dict
 from torch_geometric import seed_everything
-
-from framework.finetuning import load_pretrained_model_cfg, init_model_from_pretrained
 from framework.logger import create_logger
 from torch_geometric.graphgym.register import act_dict
 
@@ -184,10 +182,6 @@ if __name__ == '__main__':
         else:
             cfg.device = cfg.accelerator  # e.g., "cuda:0"
 
-        # Pretrained settings
-        if cfg.pretrained.dir:
-            cfg = load_pretrained_model_cfg(cfg)
-
         logging.info(f"[*] Run ID {run_id}: seed={cfg.seed}, "
                      f"split_index={cfg.dataset.split_index}")
         t0 = datetime.datetime.now()
@@ -198,11 +192,6 @@ if __name__ == '__main__':
         loggers = create_logger()
         act_dict['Gelu'] = nn.GELU
         model = create_model()
-        if cfg.pretrained.dir:
-            model = init_model_from_pretrained(
-                model, cfg.pretrained.dir, cfg.pretrained.freeze_main,
-                cfg.pretrained.reset_prediction_head
-            )
 
         optimizer = create_optimizer(model.parameters(), new_optimizer_config(cfg))
         scheduler = create_scheduler(optimizer, new_scheduler_config(cfg))
@@ -222,17 +211,11 @@ if __name__ == '__main__':
 
         # Start training
         if cfg.train.mode == 'standard':
-            if cfg.wandb.use:
-                logging.warning("[W] WandB logging is not supported with the "
-                                "default train.mode, set it to `custom`")
-            if cfg.mlflow.use:
-                logging.warning("[ML] MLflow logging is not supported with the "
-                                "default train.mode, set it to `custom`")
             train(loggers, loaders, model, optimizer, scheduler)
         else:
             train_dict[cfg.train.mode](loggers, loaders, model, optimizer, scheduler)
 
-    # Aggregate results from different seeds
+    # Aggregate results from different seedss
     try:
         agg_runs(cfg.out_dir, cfg.metric_best)
     except Exception as e:
@@ -247,10 +230,10 @@ if __name__ == '__main__':
 
 # Example runs:
 # op10
-# python main.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression-grit.yaml  wandb.use False accelerator "cuda:0" optim.max_epoch 15 seed 41 dataset.dir '/mnt/data/jiang'
-# python main.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression-grit.yaml  wandb.use False accelerator "cuda:0" optim.max_epoch 15 seed 41 dataset.dir '/mnt/data/jiang'
-# python main.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression-graphormerlike.yaml  wandb.use False accelerator "cuda:0" optim.max_epoch 15 seed 41 dataset.dir '/mnt/data/jiang'
+# python main.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression.yaml accelerator "cuda:0" optim.max_epoch 15 seed 41 dataset.dir '/mnt/data/jiang'
+# python main.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression-grit.yaml accelerator "cuda:0" optim.max_epoch 15 seed 41 dataset.dir '/mnt/data/jiang'
+# python main.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression-graphormerlike.yaml accelerator "cuda:0" optim.max_epoch 15 seed 41 dataset.dir '/mnt/data/jiang'
 
 # op20
-# python main.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression.yaml  wandb.use False accelerator "cuda:0" optim.max_epoch 15 seed 41 dataset.dir '/mnt/data/jiang/op20'
-# python main.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression-graphormerlike.yaml  wandb.use False accelerator "cuda:0" optim.max_epoch 15 seed 41 dataset.dir '/mnt/data/jiang/op20'
+# python main.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression.yaml accelerator "cuda:0" optim.max_epoch 15 seed 41 dataset.dir '/mnt/data/jiang/op20'
+# python main.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression-graphormerlike.yaml accelerator "cuda:0" optim.max_epoch 15 seed 41 dataset.dir '/mnt/data/jiang/op20'

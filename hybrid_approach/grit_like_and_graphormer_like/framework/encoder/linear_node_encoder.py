@@ -7,8 +7,12 @@ from torch_geometric.graphgym.register import register_node_encoder
 class LinearNodeEncoder(torch.nn.Module):
     def __init__(self, emb_dim):
         super().__init__()
-        dim_in = 34
-        self.encoder = torch.nn.Linear(dim_in, emb_dim)
+        if cfg.dataset.name in ['node-regression']:
+            self.dim_in = 34
+        else:
+            raise ValueError("Input edge feature dim is required to be hardset "
+                             "or refactored to use a cfg option.")
+        self.encoder = torch.nn.Linear(self.dim_in, emb_dim)
 
     def forward(self, batch):
         batch.x = self.encoder(batch.x)

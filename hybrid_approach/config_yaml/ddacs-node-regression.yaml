@@ -3,10 +3,12 @@ metric_best: mae # use validation MAE (mean absolute error) to pick the best epo
 metric_agg: argmin # Use argmin for lower-is-better metrics (MAE, MSE, RMSE, CE/NLL).
 tensorboard_each_run: True
 
+
 dataset:
   format: PyG-DDACSNPYStream     
   name: node-regression  
   task: graph
+  
   split_mode: standard
   task_type: regression
   transductive: False
@@ -20,7 +22,7 @@ dataset:
 
 posenc_RRWP:
   enable: False
-  
+
 train:
   mode: train
   batch_size: 16             

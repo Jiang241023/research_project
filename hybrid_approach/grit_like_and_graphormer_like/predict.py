@@ -5,7 +5,7 @@ from torch_geometric.loader import DataLoader
 from argparse import Namespace
 
 import framework  
-from framework.loader.dataset.ddacs_npy_stream import DDACSNPYStream
+from hybrid_approach.grit_like_and_graphormer_like.framework.loader.dataset.ddacs_npz_stream import DDACSNPYStream
 from torch_geometric.graphgym.config import set_cfg, load_cfg, cfg
 from torch_geometric.graphgym.model_builder import create_model
 import time
@@ -88,19 +88,19 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--cfg", required=True)
     ap.add_argument("--ckpt", required=True)
-    ap.add_argument("--data", required=True)
+    ap.add_argument("--dataset_dir", required=True)
     ap.add_argument("--out", required=True)
-    ap.add_argument("--device", default="cuda:0")
+    ap.add_argument("--accelerator", default="cuda:0")
     ap.add_argument("--batch_size", type=int, default=8)
     args = ap.parse_args()
 
     # start time
     t0 = time.perf_counter()
-    infer(args.data, args.ckpt, args.cfg, args.out, device=args.device, batch_size=args.batch_size)
+    infer(args.dataset_dir, args.ckpt, args.cfg, args.out, device=args.accelerator, batch_size=args.batch_size)
 
     # end time
     total = time.perf_counter()-t0
     print(f"(total time:  {total:.2f}s)")
 
-#python predict.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression.yaml --ckpt /home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/results/ddacs-node-regression/41/ckpt/9.ckpt --data /mnt/data/jiang --out /home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/grit_like --batch_size 16
-#python predict.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression-graphormerlike.yaml --ckpt /home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/results/ddacs-node-regression-graphormerlike/41/ckpt/14.ckpt --data /mnt/data/jiang --out /home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/graphormer_like --batch_size 16 
+#python predict.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression.yaml --ckpt /home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/results/ddacs-node-regression/41/ckpt/14.ckpt --dataset_dir /mnt/data/jiang --out /home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/grit_like --batch_size 16 --accelerator "cuda:0"
+#python predict.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression-graphormerlike.yaml --ckpt /home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/results/ddacs-node-regression-graphormerlike/41/ckpt/14.ckpt --data /mnt/data/jiang --out /home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/graphormer_like --batch_size 16 --device "cuda:0"

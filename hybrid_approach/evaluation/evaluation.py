@@ -80,14 +80,14 @@ if __name__ == "__main__":
     # Config 
     OPERATION   = 10
     TIMESTEP    = 2
-    pred_dir    = "/home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/graphormer_like-fullsamples-10epochs-alpha0.8-beta0.2-graphormer_likewithlap"
+    pred_dir    = "/home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/grit_like"
     data_dir    = Path("/mnt/data/darus/")
 
     # save a one-row CSV with totals
     WRITE_CSV   = True
-    save_dir    = Path("/home/RUS_CIP/st186731/research_project/hybrid_approach/Evaluation_output")
+    save_dir    = Path("/home/RUS_CIP/st186731/research_project/hybrid_approach/evaluation_output")
     save_dir.mkdir(parents=True, exist_ok=True)
-    totals_csv_path = save_dir / "dataset_totals_graphormer_like_fullsamples_15epoch_alpha0.8_beta0.2_withlap.csv"
+    totals_csv_path = save_dir / "dataset_totals_graphormer_like_fullsamples_15epoch_alpha1_beta1_withlap.csv"
     # Load dataset index
     dataset = DDACSDataset(data_dir, "h5")
     pairs = scan_prediction_files(pred_dir)
@@ -191,4 +191,4 @@ if __name__ == "__main__":
         print(f"[OK] Wrote totals CSV → {totals_csv_path}")
 
 # Example runs:
-#python /home/RUS_CIP/st186731/research_project/RP-3875/hybrid_approach/difference_and_Chamfer_distance/difference_and_CHamfer_distance.py
+#python /home/RUS_CIP/st186731/research_project/hybrid_approach/evaluation/evaluation.py

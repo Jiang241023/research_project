@@ -10,26 +10,6 @@ from pathlib import Path
 from DDACSDataset import DDACSDataset
 from utils_DDACS import extract_mesh, extract_point_springback
 
-# Config
-OPERATION   = 10
-TIMESTEP    = 2
-# pred_dir    = "/home/RUS_CIP/st186731/research_project/RP-3875/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/grit_like"
-# pred_dir    = "/home/RUS_CIP/st186731/research_project/RP-3875/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/graphormer_like"
-pred_dir    = "/home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/grit_like-fullsamples-10epochs-alpha0.8-beta0.2-grit_likewithlap"
-data_dir    = Path("/mnt/data/darus/")
-
-FIGURE_SIZES = {"double_col": (7.0, 3.0)}
-FIGURE_SIZE  = FIGURE_SIZES["double_col"]
-FIGURE_DPI   = 150
-AXIS_LIMITS  = [0, 110]
-VIEW_ELEVATION = 30
-VIEW_AZIMUTH   = 45
-
-SAVE_DIR = Path("/home/RUS_CIP/st186731/research_project/figures/grit_like")
-SAVE_DIR.mkdir(parents=True, exist_ok=True)
-
-MODEL_TAG = Path(pred_dir).name  # e.g., "grit_like" — used in filenames
-
 def find_h5_by_id(dataset, sid):
     """Return (sim_id, metadata, h5_path) for the given string/int sample id."""
     sid = str(sid)
@@ -125,7 +105,7 @@ def plot_one_sample(sim_id, node_coords, disp_gt, disp_pred, save_path):
     ax3.view_init(VIEW_ELEVATION, VIEW_AZIMUTH)
     ax3.set_xlabel("X [mm]"); ax3.set_ylabel("Y [mm]"); ax3.set_zlabel("Z [mm]")
 
-    plt.suptitle(f"Springback Comparison - Sample {sim_id} - {MODEL_TAG}", y=0.98, fontsize=12)
+    plt.suptitle(f"Springback Comparison - Sample {sim_id} - {MODEL_TAG}-fullsamples-15epochs-alpha1-beta1-grit_likewithlap", y=0.98, fontsize=12)
 
     fig.tight_layout()
     fig.savefig(save_path, dpi=FIGURE_DPI, bbox_inches="tight", pad_inches=0.1)
@@ -133,6 +113,27 @@ def plot_one_sample(sim_id, node_coords, disp_gt, disp_pred, save_path):
 
 
 if __name__ == "__main__":
+
+    # Config
+    OPERATION   = 10
+    TIMESTEP    = 2
+    # pred_dir    = "/home/RUS_CIP/st186731/research_project/RP-3875/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/grit_like"
+    # pred_dir    = "/home/RUS_CIP/st186731/research_project/RP-3875/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/graphormer_like"
+    pred_dir    = "/home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/grit_like"
+    data_dir    = Path("/mnt/data/darus/")
+
+    FIGURE_SIZES = {"double_col": (7.0, 3.0)}
+    FIGURE_SIZE  = FIGURE_SIZES["double_col"]
+    FIGURE_DPI   = 150
+    AXIS_LIMITS  = [0, 110]
+    VIEW_ELEVATION = 30
+    VIEW_AZIMUTH   = 45
+
+    SAVE_DIR = Path("/home/RUS_CIP/st186731/research_project/figures/grit_like")
+    SAVE_DIR.mkdir(parents=True, exist_ok=True)
+
+    MODEL_TAG = Path(pred_dir).name  # e.g., "grit_like" — used in filenames
+
     dataset = DDACSDataset(data_dir, "h5")
     print(f"Loaded {len(dataset)} simulations")
     pairs = scan_prediction_files(pred_dir)
