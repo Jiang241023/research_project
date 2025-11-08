@@ -1,8 +1,10 @@
 # RP-3875
 Research Project:  Potential Interaction of Graph Reconstruction Methods and Transformers
 
-> **Python environment setup with uv**
->
+# Name
+Yueyang Jiang (st186731)
+
+# 1.Python environment setup with uv
 > ```bash
 > # Install uv (once)
 > curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -31,18 +33,23 @@ Research Project:  Potential Interaction of Graph Reconstruction Methods and Tra
 > uv pip install scipy
 > ```
 
-> **The architecture of hybrid_approach**
+# 2.The architecture of hybrid_approach
 > ```bash
 > hybrid_approach/                          
-> ├─ config_yaml/                           # the configurations for these approaches.
-> ├─ evaluation/                            # where you can implement the evaluation.
-> ├─ feature_extraction/                    # where you can extract the features.
-> ├─ grit_like_and_graphormer_like/         # crucial files for hybrid_approach.
-> │  ├─ framework/                          # where you can find components of models such as encoder, head, layer, loader, loss funtion, network, and optimizer.
-> │  ├─ main.py                             # where you can run the training loop
-> │  ├─ predict.py                          # where you can predict the springback.
-> ├─ visualization/                         # where you can implement the visualization.
+> ├─ config_yaml/                     # the configurations for these approaches.
+> ├─ evaluation/                      # where you can implement the evaluation.
+> ├─ feature_extraction/              # where you can extract the features.
+> ├─ grit_like_and_graphormer_like/   # crucial files for hybrid_approach.
+> │  ├─ framework/                    # where you can find components of models such as encoder, head, layer, loader, loss funtion, network, and optimizer.
+> │  ├─ main.py                       # where you can run the training loop
+> │  ├─ predict.py                    # where you can predict the springback.
+> ├─ visualization/                   # where you can implement the visualization.
 > ├─ .gitignore
 > ├─ LICENSE
 > └─ README.md
+> ```
+
+# 3.Run the models
+> ```bash
+>
 > ```
