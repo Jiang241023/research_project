@@ -5,7 +5,7 @@ tensorboard_each_run: True
 
 
 dataset:
-  format: PyG-DDACSNPYStream     
+  format: PyG-DDACSNPZStream     
   name: node-regression  
   task: graph
   
@@ -35,7 +35,7 @@ model:
   # loss_fun: mse
   loss_fun: mse_combined_with_laplacian
   alpha: 1
-  beta: 1     
+  beta: 3     
   laplace_normalized: True     # normalized Laplacian for degree-robustness
   laplace_norm_mode: per_node  # keeps magnitude stable across graphs
   laplace_on_residuals: True   # set true to smooth errors instead of predictions                

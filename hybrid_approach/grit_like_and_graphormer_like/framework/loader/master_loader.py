@@ -3,7 +3,7 @@ from torch_geometric.graphgym.config import cfg
 from torch_geometric.graphgym.register import register_loader
 
 from framework.loader.split_generator import set_dataset_splits
-from hybrid_approach.grit_like_and_graphormer_like.framework.loader.dataset.ddacs_npz_stream import DDACSNPZStream
+from framework.loader.dataset.ddacs_npz_stream import DDACSNPZStream
 
 
 def _shape_any(x):

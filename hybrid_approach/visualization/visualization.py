@@ -74,7 +74,7 @@ def plot_one_sample(sim_id, node_coords, disp_gt, disp_pred, save_path):
     ax1 = fig.add_subplot(131, projection="3d")
     ax1.scatter(coords_plot[:, 0], coords_plot[:, 1], coords_plot[:, 2], c=col1, s=1, alpha=0.9)
     add_colorbar(fig, ax1, plt.cm.ScalarMappable(cmap="plasma", norm=norm_linear), "Magnitude [mm]")
-    ax1.set_title(f"Original Springback\n(OP{OPERATION}, id={sim_id})")
+    ax1.set_title(f"Original Springback\n(OP{operation}, id={sim_id})")
     ax1.set_xlim(AXIS_LIMITS); ax1.set_ylim(AXIS_LIMITS); ax1.set_zlim(AXIS_LIMITS)
     ax1.view_init(VIEW_ELEVATION, VIEW_AZIMUTH)
     ax1.set_xlabel("X [mm]"); ax1.set_ylabel("Y [mm]"); ax1.set_zlabel("Z [mm]")
@@ -83,7 +83,7 @@ def plot_one_sample(sim_id, node_coords, disp_gt, disp_pred, save_path):
     ax2 = fig.add_subplot(132, projection="3d")
     ax2.scatter(coords_plot[:, 0], coords_plot[:, 1], coords_plot[:, 2], c=col2, s=1, alpha=0.9)
     add_colorbar(fig, ax2, plt.cm.ScalarMappable(cmap="plasma", norm=norm_linear), "Magnitude [mm]")
-    ax2.set_title(f"Predicted Springback\n(OP{OPERATION}, id={sim_id})")
+    ax2.set_title(f"Predicted Springback\n(OP{operation}, id={sim_id})")
     ax2.set_xlim(AXIS_LIMITS); ax2.set_ylim(AXIS_LIMITS); ax2.set_zlim(AXIS_LIMITS)
     ax2.view_init(VIEW_ELEVATION, VIEW_AZIMUTH)
     ax2.set_xlabel("X [mm]"); ax2.set_ylabel("Y [mm]"); ax2.set_zlabel("Z [mm]")
@@ -115,11 +115,11 @@ def plot_one_sample(sim_id, node_coords, disp_gt, disp_pred, save_path):
 if __name__ == "__main__":
 
     # Config
-    OPERATION   = 10
-    TIMESTEP    = 2
+    operation   = 10
+    timestep    = 2
     # pred_dir    = "/home/RUS_CIP/st186731/research_project/RP-3875/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/grit_like"
     # pred_dir    = "/home/RUS_CIP/st186731/research_project/RP-3875/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/graphormer_like"
-    pred_dir    = "/home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/grit_like"
+    pred_dir    = "/home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/grit_like_fullsamples_15epoch_alpha1_beta1_withlap"
     data_dir    = Path("/mnt/data/darus/")
 
     FIGURE_SIZES = {"double_col": (7.0, 3.0)}
@@ -129,8 +129,9 @@ if __name__ == "__main__":
     VIEW_ELEVATION = 30
     VIEW_AZIMUTH   = 45
 
-    SAVE_DIR = Path("/home/RUS_CIP/st186731/research_project/figures/grit_like")
-    SAVE_DIR.mkdir(parents=True, exist_ok=True)
+    save_dir = Path("RP-3875/figures/grit_like")
+    # save_dir = Path("/home/RUS_CIP/st186731/research_project/figures/grit_like_fullsamples_15epoch_alpha1_beta1_withlap")
+    save_dir.mkdir(parents=True, exist_ok=True)
 
     MODEL_TAG = Path(pred_dir).name  # e.g., "grit_like" — used in filenames
 
@@ -146,9 +147,9 @@ if __name__ == "__main__":
 
             # Mesh + GT for this sample
             node_coords, triangles = extract_mesh(
-                h5_path, operation=OPERATION, component='blank', timestep=TIMESTEP
+                h5_path, operation=operation, component='blank', timestep=timestep
             )
-            final_coords_gt, disp_gt = extract_point_springback(h5_path, operation=OPERATION)
+            final_coords_gt, disp_gt = extract_point_springback(h5_path, operation=operation)
 
             # Prediction for this sample
             disp_pred = np.load(pred_path)
@@ -157,7 +158,7 @@ if __name__ == "__main__":
 
             # Save figure
             out_name = f"springback_id{sid_str}_{MODEL_TAG}.png"
-            out_path = SAVE_DIR / out_name
+            out_path = save_dir / out_name
             plot_one_sample(sim_id, node_coords, disp_gt, disp_pred, out_path)
             print(f"[{idx}/{len(pairs)}] saved → {out_path}")
         except Exception as e:

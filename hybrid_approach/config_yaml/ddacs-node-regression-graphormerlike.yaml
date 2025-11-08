@@ -5,7 +5,7 @@ tensorboard_each_run: True
 
 
 dataset:
-  format: PyG-DDACSNPYStream
+  format: PyG-DDACSNPZStream
   name: node-regression     
   task: graph
   split_mode: standard
