@@ -11,13 +11,24 @@ Research Project:  Potential Interaction of Graph Reconstruction Methods and Tra
 > uv venv
 > source .venv/bin/activate
 >
-> # Install core stack (match Torch/CUDA to your system)
-> uv pip install --extra-index-url https://download.pytorch.org/whl/cu128 torch==2.8.0
-> uv pip install -r requirements.txt
->
-> # PyG wheels (match Torch 2.8.0 + cu128)
+> # Install required packages 
+> uv pip install torch==2.8.0 --extra-index-url https://download.pytorch.org/whl/cu128
+> uv pip install h5py
+> uv pip install tqdm
+> uv pip install pandas
 > uv pip install torch-scatter torch-sparse torch-cluster torch-spline-conv torch-geometric \
 >   -f https://data.pyg.org/whl/torch-2.8.0+cu128.html --trusted-host data.pyg.org
+> uv pip install rdkit
+> uv pip install torchmetrics
+> uv pip install ogb
+> uv pip install tensorboardX
+> uv pip install yacs
+> uv pip install opt_einsum
+> uv pip install graphgym 
+> uv pip install pytorch-lightning
+> uv pip install setuptools
+> uv pip install matplotlib
+> uv pip install scipy
 > ```
 
 > **The architecture of hybrid approaches**
