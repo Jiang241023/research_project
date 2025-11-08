@@ -129,8 +129,8 @@ if __name__ == "__main__":
     VIEW_ELEVATION = 30
     VIEW_AZIMUTH   = 45
 
-    save_dir = Path("RP-3875/figures/grit_like")
-    # save_dir = Path("/home/RUS_CIP/st186731/research_project/figures/grit_like_fullsamples_15epoch_alpha1_beta1_withlap")
+    # save_dir = Path("RP-3875/figures/grit_like")
+    save_dir = Path("/home/RUS_CIP/st186731/research_project/figures/grit_like_fullsamples_15epoch_alpha1_beta1_withlap")
     save_dir.mkdir(parents=True, exist_ok=True)
 
     MODEL_TAG = Path(pred_dir).name  # e.g., "grit_like" — used in filenames
