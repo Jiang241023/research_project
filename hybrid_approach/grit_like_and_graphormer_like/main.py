@@ -11,7 +11,7 @@ if ROOT not in sys.path:
     sys.path.append(ROOT)
 
 import framework  # noqa, register custom modules
-from framework.optimizer.extra_optimizers import ExtendedSchedulerConfig
+from framework.optimizer.optimizer import ExtendedSchedulerConfig
 
 from torch_geometric.graphgym.cmd_args import parse_args
 from torch_geometric.graphgym.config import (
