@@ -3,7 +3,7 @@ from torch_geometric.graphgym.config import cfg
 from torch_geometric.graphgym.register import register_loader
 
 from framework.loader.split_generator import set_dataset_splits
-from framework.loader.dataset.ddacs_npy_stream import DDACSNPYStream
+from framework.loader.dataset.ddacs_npz_stream import DDACSNPZStream
 
 
 def _shape_any(x):
@@ -80,7 +80,7 @@ def log_loaded_dataset(dataset, fmt, name):
 def load_dataset_master(fmt, name, dataset_dir):
     """
     Single dataset entry point.
-    Use in YAML: dataset.format: PyG-DDACSNPYStream
+    Use in YAML: dataset.format: PyG-DDACSNPZStream
     """
     if not fmt.startswith("PyG-"):
         raise ValueError(f"Unknown data format: {fmt}")
@@ -88,14 +88,14 @@ def load_dataset_master(fmt, name, dataset_dir):
     pyg_dataset_id = fmt.split("-", 1)[1]
     print(f"pyg_dataset_id (from load_dataset_master):{pyg_dataset_id}")
 
-    if pyg_dataset_id != "DDACSNPYStream":
+    if pyg_dataset_id != "DDACSNPZStream":
         raise ValueError(
             f"Unexpected PyG Dataset identifier: {pyg_dataset_id}. "
-            "Use 'PyG-DDACSNPYStream'."
+            "Use 'PyG-DDACSNPZStream'."
         )
 
     # Instantiate dataset (returns LineGraphData and sets num_edges/num_nodes)
-    dataset = DDACSNPYStream(
+    dataset = DDACSNPZStream(
         root=dataset_dir,
         max_samples=getattr(cfg.dataset, "max_samples", None),
         debug=getattr(cfg, "debug", False),

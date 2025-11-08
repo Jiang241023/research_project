@@ -98,7 +98,7 @@ class LineGraphData(Data):
 
 
 # Dataset (NPZ only)
-class DDACSNPYStream(Dataset):
+class DDACSNPZStream(Dataset):
     """
     Streaming PyG dataset for DDACS NPZ exports (one compressed bundle per ID).
 
@@ -121,12 +121,12 @@ class DDACSNPYStream(Dataset):
         if max_samples is not None:
             self.ids = self.ids[:int(max_samples)]
         if self.debug:
-            print(f"[DDACSNPYStream/NPZ] Streaming from {root}; samples: {len(self.ids)}")
+            print(f"[DDACSNPZStream] Streaming from {root}; samples: {len(self.ids)}")
 
         # Minimal attrs GraphGym sometimes probes
         self.data = Data()
         self._data = self.data
-        self.name = "DDACSNPYStream"
+        self.name = "DDACSNPZStream"
 
         # Attach RRWP pre-transform if enabled in cfg and not already set
         if getattr(cfg, "posenc_RRWP", None) and getattr(cfg.posenc_RRWP, "enable", False):
@@ -143,7 +143,7 @@ class DDACSNPYStream(Dataset):
     def load_from_npz(self, sid: int) -> LineGraphData:
         npz = npz_path(self.root, sid)
         if self.debug:
-            print(f"[DDACSNPYStream/NPZ] Loading: {npz}")
+            print(f"[DDACSNPZStream] Loading: {npz}")
         if not npz.exists():
             raise FileNotFoundError(f"Expected NPZ bundle not found: {npz}")
 

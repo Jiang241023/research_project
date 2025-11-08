@@ -3,10 +3,12 @@ metric_best: mae # use validation MAE (mean absolute error) to pick the best epo
 metric_agg: argmin # Use argmin for lower-is-better metrics (MAE, MSE, RMSE, CE/NLL).
 tensorboard_each_run: True
 
+
 dataset:
-  format: PyG-DDACSNPYStream     
+  format: PyG-DDACSNPZStream     
   name: node-regression  
   task: graph
+  
   split_mode: standard
   task_type: regression
   transductive: False
@@ -20,7 +22,7 @@ dataset:
 
 posenc_RRWP:
   enable: False
-  
+
 train:
   mode: train
   batch_size: 16             
@@ -33,7 +35,7 @@ model:
   # loss_fun: mse
   loss_fun: mse_combined_with_laplacian
   alpha: 1
-  beta: 1     
+  beta: 3     
   laplace_normalized: True     # normalized Laplacian for degree-robustness
   laplace_norm_mode: per_node  # keeps magnitude stable across graphs
   laplace_on_residuals: True   # set true to smooth errors instead of predictions                
