@@ -323,13 +323,19 @@ if __name__ == '__main__':
     # Add the save path for op10
     OUT_DIR_1 = Path("/mnt/data/jiang")
     OUT_DIR_1.mkdir(parents=True, exist_ok=True)
+
     # Run it
     features_per_sample(dataset, OUT_DIR_1, action="save_npz", op_form=10, timestep = 3, sample_to_check = "16039")
     print("----------------------")
     print("----------------------")
     print("----------------------")
+
     # Add the save path for op20
     OUT_DIR_2 = Path("/mnt/data/jiang/op20")
     OUT_DIR_2.mkdir(parents=True, exist_ok=True)
+
     # Run it
     features_per_sample(dataset, OUT_DIR_2, action="save_npz", op_form=20, timestep = -1, sample_to_check = "16039")
+
+# Example run:
+# python /home/RUS_CIP/st186731/research_project/hybrid_approach/feature_extraction/dataset_feature_extraction.py

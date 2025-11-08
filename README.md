@@ -4,7 +4,7 @@ Research Project:  Potential Interaction of Graph Reconstruction Methods and Tra
 # Name
 Yueyang Jiang (st186731)
 
-# 1.Python environment setup with uv
+# Python environment setup with uv
 > ```bash
 > # Install uv (once)
 > curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -33,7 +33,7 @@ Yueyang Jiang (st186731)
 > uv pip install scipy
 > ```
 
-# 2.The architecture of hybrid_approach
+# The architecture of hybrid_approach
 > ```bash
 > hybrid_approach/                          
 > ├─ config_yaml/                     # the configurations for these approaches.
@@ -41,7 +41,7 @@ Yueyang Jiang (st186731)
 > ├─ feature_extraction/              # where you can extract the features.
 > ├─ grit_like_and_graphormer_like/   # crucial files for hybrid_approach.
 > │  ├─ framework/                    # where you can find components of models such as encoder, head, layer, loader, loss funtion, network, and optimizer.
-> │  ├─ main.py                       # where you can run the training loop
+> │  ├─ main.py                       # where you can run the training loop.
 > │  ├─ predict.py                    # where you can predict the springback.
 > ├─ visualization/                   # where you can implement the visualization.
 > ├─ .gitignore
@@ -49,7 +49,24 @@ Yueyang Jiang (st186731)
 > └─ README.md
 > ```
 
-# 3.Run the models
+# Run the models
 > ```bash
+> # Extract required features
+> python /home/RUS_CIP/st186731/research_project/hybrid_approach/feature_extraction/dataset_feature_extraction.py
+>
+> # Run the training loop
+> cd /home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like
+> python main.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression.yaml \
+>   accelerator "cuda:0" optim.max_epoch 15 seed ?.> > 41 dataset.dir '/mnt/data/jiang'
+> 
+>  
+>
+>
+>
+>
+>
+>
+>
+>
 >
 > ```
