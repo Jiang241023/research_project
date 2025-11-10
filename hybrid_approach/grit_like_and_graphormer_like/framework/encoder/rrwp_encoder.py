@@ -1,3 +1,4 @@
+"""This file is from GRIT:https://github.com/LiamMa/GRIT/blob/main/grit"""
 import torch
 from torch import nn
 from torch.nn import functional as F

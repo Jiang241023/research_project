@@ -1,3 +1,4 @@
+"""This file is from GRIT:https://github.com/LiamMa/GRIT/blob/main/grit"""
 import operator as op
 from copy import deepcopy
 from typing import Union, Callable, Optional, Dict, Any

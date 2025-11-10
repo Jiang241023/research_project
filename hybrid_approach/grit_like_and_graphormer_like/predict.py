@@ -5,7 +5,7 @@ from torch_geometric.loader import DataLoader
 from argparse import Namespace
 
 import framework  
-from hybrid_approach.grit_like_and_graphormer_like.framework.loader.dataset.ddacs_npz_stream import DDACSNPYStream
+from framework.loader.dataset.ddacs_npz_stream import DDACSNPZStream
 from torch_geometric.graphgym.config import set_cfg, load_cfg, cfg
 from torch_geometric.graphgym.model_builder import create_model
 import time
@@ -56,7 +56,7 @@ def infer(data_dir, ckpt_path, cfg_path, out_dir, device='cuda:0', batch_size=8)
     model = load_checkpoint(model, ckpt_path, torch.device(device))
 
     # Load dataset
-    ds = DDACSNPYStream(root=data_dir, debug=False)
+    ds = DDACSNPZStream(root=data_dir, debug=False)
     loader = DataLoader(ds, batch_size=batch_size, shuffle=False, num_workers=0, pin_memory=True)
 
     # Create the output directory
@@ -102,5 +102,5 @@ if __name__ == "__main__":
     total = time.perf_counter()-t0
     print(f"(total time:  {total:.2f}s)")
 
-#python predict.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression.yaml --ckpt /home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/results/ddacs-node-regression/41/ckpt/14.ckpt --dataset_dir /mnt/data/jiang --out /home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/grit_like --batch_size 16 --accelerator "cuda:0"
+#python predict.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression.yaml --ckpt /home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/results/ddacs-node-regression/41/ckpt/14.ckpt --dataset_dir /mnt/data/jiang --out /home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/grit_like --accelerator "cuda:0" --batch_size 16 
 #python predict.py --cfg /home/RUS_CIP/st186731/research_project/hybrid_approach/config_yaml/ddacs-node-regression-graphormerlike.yaml --ckpt /home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/results/ddacs-node-regression-graphormerlike/41/ckpt/14.ckpt --data /mnt/data/jiang --out /home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/graphormer_like --batch_size 16 --device "cuda:0"

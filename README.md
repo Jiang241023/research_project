@@ -51,6 +51,9 @@ Yueyang Jiang (st186731)
 
 # Run the code
 > ```bash
+> # Clone the code
+> git clone https://github.com/BaumSebastian/RP-3875.git
+>
 > # Extract required features
 > python /home/RUS_CIP/st186731/research_project/hybrid_approach/feature_extraction/dataset_feature_extraction.py
 >
@@ -78,7 +81,7 @@ Yueyang Jiang (st186731)
 >
 > # The following parameters should be revised in the visualizaiton.py!!!!!
 > # replace "operation = 10" with "operation = 20" for op20
-> # replace "timestep = 2" with "timestep = -1" for op20
+> # replace "timestep = 2" with "timestep = 0" for op20
 > # replace 'pred_dir = "./hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/grit_like"' with other prediction directory
 > # replace "save_dir = Path("/home/RUS_CIP/st186731/research_project/figures/grit_like_fullsamples_15epoch_alpha1_beta1_withlap")" with other save directory "./figures/grit_like_XX"
 >
@@ -87,7 +90,7 @@ Yueyang Jiang (st186731)
 >
 > # The following parameters should be revised in the evaluation.py!!!!!
 > # replace "operation = 10" with "operation = 20" for op20
-> # replace "timestep = 2" with "timestep = -1" for op20
+> # replace "timestep = 2" with "timestep = 0" for op20
 > # replace pred_dir = "./hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/grit_like" with other prediction directory
 > # replace "save_dir = Path("/home/RUS_CIP/st186731/research_project/hybrid_approach/evaluation_output")" with other save directory "./hybrid_approach/XX"
 > # replace totals_csv_path = save_dir / "dataset_totals_graphormer_like_fullsamples_10epoch_alpha0.8_beta0.2_withlap.csv" with other CSV path "dataset_totals_XX_like_XX"
