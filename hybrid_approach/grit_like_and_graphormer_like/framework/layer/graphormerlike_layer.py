@@ -35,7 +35,7 @@ def resolve_e2e(batch, E, device=None):
     if not (e2e.dim() == 2 and e2e.size(0) == 2):
         raise RuntimeError(
             f"edge_edge_index must be (2, M). Got {tuple(e2e.size())}. "
-            "This usually means your Data class didn't define __cat_dim__/__inc__ "
+            "This usually means Data class didn't define __cat_dim__/__inc__ "
             "for 'edge_edge_index'. Use LineGraphData."
         )
     return e2e[0], e2e[1]
@@ -202,7 +202,7 @@ class GraphormerEdgeLayer(nn.Module):
             if hasattr(batch, "edge_index_undirected"):
                 node_i, node_j = batch.edge_index_undirected
             else:
-                # if only directed is present, add to dst; duplicate for src if you want symmetry
+                # if only directed is present, add to dst; duplicate for src if want symmetry
                 node_i, node_j = batch.edge_index
 
             node_residual  = node_in

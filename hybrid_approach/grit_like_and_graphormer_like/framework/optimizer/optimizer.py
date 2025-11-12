@@ -12,26 +12,26 @@ from torch_geometric.graphgym.optim import SchedulerConfig
 import torch_geometric.graphgym.register as register
 
 @register.register_optimizer('adamW')
-def adamW_optimizer(params: Iterator[Parameter], base_lr: float,
-                   weight_decay: float) -> AdamW:
+def adamW_optimizer(params, base_lr,
+                   weight_decay) :
     return AdamW(params, lr=base_lr, weight_decay=weight_decay)
 
 @dataclass
 class ExtendedSchedulerConfig(SchedulerConfig):
-    reduce_factor: float = 0.5
-    schedule_patience: int = 15
-    min_lr: float = 1e-6
-    num_warmup_epochs: int = 10
-    train_mode: str = 'custom'
-    eval_period: int = 1
-    num_cycles: float = 0.5
-    min_lr_mode: str = "threshold" # ["rescale", "threshold"]
+    reduce_factor = 0.5
+    schedule_patience = 15
+    min_lr= 1e-6
+    num_warmup_epochs = 10
+    train_mode = 'custom'
+    eval_period = 1
+    num_cycles = 0.5
+    min_lr_mode = "threshold" # ["rescale", "threshold"]
 
 
 @register.register_scheduler('cosine_with_warmup')
-def cosine_with_warmup_scheduler(optimizer: Optimizer,
-                                 num_warmup_epochs: int, max_epoch: int,
-                                 min_lr:float=0.,
+def cosine_with_warmup_scheduler(optimizer,
+                                 num_warmup_epochs, max_epoch,
+                                 min_lr=0.,
                                  min_lr_mode="rescale", # ["clamp", "rescale"]
                                  ):
     scheduler = get_cosine_schedule_with_warmup(
@@ -44,10 +44,10 @@ def cosine_with_warmup_scheduler(optimizer: Optimizer,
     return scheduler
 
 def get_cosine_schedule_with_warmup(
-        optimizer: Optimizer, num_warmup_steps: int, num_training_steps: int,
-        num_cycles: float = 0.5, last_epoch: int = -1,
-        min_lr:float = 0.,
-        min_lr_mode: str ="rescale"
+        optimizer, num_warmup_steps, num_training_steps,
+        num_cycles = 0.5, last_epoch= -1,
+        min_lr= 0.,
+        min_lr_mode ="rescale"
 ):
     """
     Implementation by Huggingface:

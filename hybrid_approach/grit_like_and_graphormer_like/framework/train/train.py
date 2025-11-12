@@ -1,4 +1,3 @@
-"""This file is from GRIT:https://github.com/LiamMa/GRIT/blob/main/grit/layer/grit_layer.py"""
 import logging
 import time
 import torch
