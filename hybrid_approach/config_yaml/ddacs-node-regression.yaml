@@ -75,6 +75,6 @@ optim:
   optimizer: adamW
   weight_decay: 1e-4
   base_lr: 0.001
-  max_epoch: 12
+  max_epoch: 20
   scheduler: cosine_with_warmup
   num_warmup_epochs: 3

@@ -18,15 +18,14 @@ def adamW_optimizer(params, base_lr,
 
 @dataclass
 class ExtendedSchedulerConfig(SchedulerConfig):
-    reduce_factor = 0.5
-    schedule_patience = 15
-    min_lr= 1e-6
-    num_warmup_epochs = 10
-    train_mode = 'custom'
-    eval_period = 1
-    num_cycles = 0.5
-    min_lr_mode = "threshold" # ["rescale", "threshold"]
-
+    reduce_factor: float = 0.5
+    schedule_patience: int = 15
+    min_lr: float = 1e-6
+    num_warmup_epochs: int = 10
+    train_mode: str = 'custom'
+    eval_period: int = 1
+    num_cycles: float = 0.5
+    min_lr_mode: str = "threshold" # ["rescale", "threshold"]
 
 @register.register_scheduler('cosine_with_warmup')
 def cosine_with_warmup_scheduler(optimizer,
@@ -76,7 +75,11 @@ def get_cosine_schedule_with_warmup(
     def lr_lambda(current_step):
         if current_step < num_warmup_steps:
             return max(1e-6, float(current_step) / float(max(1, num_warmup_steps)))
+        
+        # progress = (t - warmup) / (T - warmup)
         progress = float(current_step - num_warmup_steps) / float(max(1, num_training_steps - num_warmup_steps))
+
+        # half-cosine: 0.5 * (1 + cos(pi * progress))  (since num_cycles = 0.5 → pi*2*0.5 = pi)
         lr = max(0.0, 0.5 * (1.0 + math.cos(math.pi * float(num_cycles) * 2.0 * progress)))
         if min_lr > 0.:
             if  min_lr_mode == "clamp":
@@ -85,8 +88,8 @@ def get_cosine_schedule_with_warmup(
                 lr = (1 - min_lr / base_lr) * lr + min_lr / base_lr
 
         return lr
-
-    return optim.lr_scheduler.LambdaLR(optimizer, lr_lambda, last_epoch)
-
+    
+    return optim.lr_scheduler.LambdaLR(optimizer, lr_lambda, last_epoch) #lr(t) = initial_lr * lr_lambda(t)
+                                                                         #lr(t) = lr_min + (base_lr - lr_min)*0.5*[1 + cos(π * progress)]
 
 

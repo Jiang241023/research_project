@@ -6,6 +6,7 @@ from DDACSDataset import DDACSDataset
 from utils_DDACS import extract_mesh, extract_point_springback
 from scipy.spatial import cKDTree as KDTree
 import matplotlib.pyplot as plt
+
 #  Utils 
 def find_h5_by_id(dataset, sid):
     """Return (sim_id, metadata, h5_path) for the given string/int sample id."""
@@ -87,7 +88,8 @@ if __name__ == "__main__":
     # Config 
     operation   = 20    # 10 or 20
     timestep    = 0     # 2 or 0
-    pred_dir    = "/home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/grit_like"
+    # pred_dir    = "/home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/grit_like"
+    pred_dir    = "/home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/grit_like_op20_grit_like_fullsamples_15epoch_alpha1_beta1_withlap"
     data_dir    = Path("/mnt/data/darus/")
     experiment_name = "op20_grit_like_fullsamples_15epoch_alpha1_beta1_withlap"
 
@@ -95,8 +97,15 @@ if __name__ == "__main__":
     WRITE_CSV   = True
     WRITE_SAMPLES_CSV   = True
     MAKE_BOXPLOTS = True
-    save_dir    = Path("/home/RUS_CIP/st186731/research_project/hybrid_approach/evaluation_output")
-    save_dir.mkdir(parents=True, exist_ok=True)
+    if operation == 10 and timestep == 2:
+        save_dir    = Path("/home/RUS_CIP/st186731/research_project/hybrid_approach/evaluation_output/op10")
+        save_dir.mkdir(parents=True, exist_ok=True)
+    elif operation == 20 and timestep == 0:
+        save_dir    = Path("/home/RUS_CIP/st186731/research_project/hybrid_approach/evaluation_output/op20")
+        save_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        raise ValueError("please check the operation and timestep")
+        
     totals_csv_path = save_dir / f"{experiment_name}_dataset_totals.csv"
     samples_csv_path = save_dir / f"{experiment_name}_per_sample.csv"
 
@@ -271,10 +280,10 @@ if __name__ == "__main__":
             ax.boxplot(
                 data,
                 labels=labels,
-                showmeans=True,
+                showmeans=False,
                 meanline=True,
                 vert=True,
-                patch_artist=True,
+                patch_artist=False,
                 showfliers=showfliers
             )
             ax.grid(True, axis='y', linestyle='--', alpha=0.4)
@@ -287,7 +296,6 @@ if __name__ == "__main__":
             plt.close(fig)
             print(f"[OK] Saved box plot → {out_path}")
 
-        # 1) Springback magnitudes — per-sample MEANS
         make_boxplot(
             {
                 "GT mean": gt_mean_array,
@@ -296,34 +304,8 @@ if __name__ == "__main__":
             },
             f"{experiment_name}: Springback magnitude (per-sample mean)",
             f"{experiment_name}_boxplot_magnitude_mean.png",
-            ylabel="|displacement|"
+            ylabel="Displacement"
         )
-
-        # 2) Springback magnitudes — per-sample MAX
-        make_boxplot(
-            {
-                "GT max": gt_max_array,
-                "Pred max": pred_max_array,
-                "Diff max": diff_max_array
-            },
-            f"{experiment_name}: Springback magnitude (per-sample max)",
-            f"{experiment_name}_boxplot_magnitude_max.png",
-            ylabel="|displacement|"
-        )
-
-        # 3) Chamfer distances — per-sample MEANS
-        make_boxplot(
-            {
-                "Chamfer GT→Pred": cham_gt_pred_mean_array,
-                "Chamfer Pred→GT": cham_pred_gt_mean_array,
-                "Chamfer Sym": cham_sym_array
-            },
-            f"{experiment_name}: Chamfer distance (per-sample mean)",
-            f"{experiment_name}_boxplot_chamfer_mean.png",
-            ylabel="L2 distance"
-        )
-
-
 
 # Example runs:
 #python /home/RUS_CIP/st186731/research_project/hybrid_approach/evaluation/evaluation.py

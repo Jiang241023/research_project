@@ -129,9 +129,15 @@ if __name__ == "__main__":
     VIEW_ELEVATION = 30
     VIEW_AZIMUTH   = 45
 
-    # save_dir = Path("RP-3875/figures/grit_like")
-    save_dir = Path("/home/RUS_CIP/st186731/research_project/figures/op20/grit_like_fullsamples_15epoch_alpha1_beta1_withlap")
-    save_dir.mkdir(parents=True, exist_ok=True)
+    if operation == 10 and timestep == 2:
+        save_dir    = Path("/home/RUS_CIP/st186731/research_project/figures/op10/grit_like")
+        save_dir.mkdir(parents=True, exist_ok=True)
+    elif operation == 20 and timestep == 0:
+        save_dir = Path("/home/RUS_CIP/st186731/research_project/figures/op20/grit_like_fullsamples_15epoch_alpha1_beta1_withlap")
+        save_dir.mkdir(parents=True, exist_ok=True)
+        
+    else:
+        raise ValueError("please check the operation and timestep")
 
     MODEL_TAG = Path(pred_dir).name  # e.g., "grit_like" — used in filenames
 
