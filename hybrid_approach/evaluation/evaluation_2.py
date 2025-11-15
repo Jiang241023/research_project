@@ -1,4 +1,4 @@
-import os, re 
+import os, re  
 import numpy as np
 from pathlib import Path
 from DDACSDataset import DDACSDataset
@@ -41,9 +41,9 @@ class RunningStats:
         if self.total_count <= 0:
             out = float("nan")
         else:
-            out =  self.running_sum / self.total_count
-        return out 
-    
+            out = self.running_sum / self.total_count
+        return out
+
     @property
     def std(self):
         if self.total_count == 0:
@@ -51,7 +51,7 @@ class RunningStats:
         m = self.mean
         var = max(0.0, self.running_sum_of_squares / self.total_count - m ** 2)
         return var ** 0.5
-    
+
     @property
     def max(self):
         return self.running_max
@@ -64,8 +64,7 @@ def scan_prediction_files(pred_dir):
         if m:
             sid = m.group(1)
             out[sid] = os.path.join(pred_dir, name)
-    return out  # dict: sid -> path
-
+    return out  
 def summarize(values):
     v = np.asarray(values, dtype=np.float64).ravel()
     if v.size == 0:
@@ -85,8 +84,9 @@ if __name__ == "__main__":
     data_dir   = Path("/mnt/data/darus/")
     experiment_name = "compare_grit_like_vs_graphormer_like_op10_1"
 
-    MAKE_BOXPLOTS     = True
-    WRITE_SAMPLES_CSV = True
+    MAKE_BOXPLOTS      = True
+    WRITE_SAMPLES_CSV  = True
+    WRITE_TOTALS_CSV   = True
 
     if operation == 10 and timestep == 2:
         save_dir = Path("/home/RUS_CIP/st186731/research_project/RP-3875/hybrid_approach/Evaluation_output/op10")
@@ -97,6 +97,7 @@ if __name__ == "__main__":
     save_dir.mkdir(parents=True, exist_ok=True)
 
     samples_csv_path = save_dir / f"{experiment_name}_per_sample.csv"
+    totals_csv_path  = save_dir / f"{experiment_name}_dataset_totals.csv"
 
     # Load dataset & predictions
     dataset = DDACSDataset(data_dir, "h5")
@@ -108,10 +109,12 @@ if __name__ == "__main__":
     if not common_ids:
         raise SystemExit("No overlapping prediction files between the two experiments.")
 
-    # Stats
-    gt_stats     = RunningStats()
-    pred1_stats  = RunningStats()
-    pred2_stats  = RunningStats()
+    # Stats (pooled across all nodes of all samples)
+    gt_stats      = RunningStats()
+    pred1_stats   = RunningStats()
+    pred2_stats   = RunningStats()
+    diff1_stats   = RunningStats()
+    diff2_stats   = RunningStats()
 
     sample_rows = []  # one row per sample
 
@@ -174,20 +177,22 @@ if __name__ == "__main__":
             all_difference1.append(difference_1)
             all_difference2.append(difference_2)
 
-            # streaming stats
+            # streaming stats across all samples
             gt_stats.update(mag_gt)
             pred1_stats.update(mag_pred1)
             pred2_stats.update(mag_pred2)
+            diff1_stats.update(difference_1)
+            diff2_stats.update(difference_2)
 
             # Per-sample summaries (for CSV only)
-            gt_mean_summarize,   gt_max_summarize,   gt_std_summarize      = summarize(mag_gt)
-            pred1_mean_summarize, pred1_max_summarize, pred1_std_summarize = summarize(mag_pred1)
-            pred2_mean_summarize, pred2_max_summarize, pred2_std_summarize = summarize(mag_pred2)
+            gt_mean_summarize,    gt_max_summarize,    gt_std_summarize      = summarize(mag_gt)
+            pred1_mean_summarize, pred1_max_summarize, pred1_std_summarize   = summarize(mag_pred1)
+            pred2_mean_summarize, pred2_max_summarize, pred2_std_summarize   = summarize(mag_pred2)
 
             # Store per-sample row
             sample_rows.append([
                 int(sid),
-                gt_mean_summarize,   gt_max_summarize,   gt_std_summarize,
+                gt_mean_summarize,    gt_max_summarize,    gt_std_summarize,
                 pred1_mean_summarize, pred1_max_summarize, pred1_std_summarize,
                 pred2_mean_summarize, pred2_max_summarize, pred2_std_summarize,
                 chamfer_sym_pred1, chamfer_sym_pred2
@@ -199,26 +204,27 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"[WARN] Skipping id={sid}: {e}")
 
-    # CSV with per-sample numbers + store column arrays
-    if WRITE_SAMPLES_CSV and sample_rows:
-        headers = [
-            "sample_id",
-            "gt_mean","gt_max","gt_std",
-            "pred1_mean","pred1_max","pred1_std",
-            "pred2_mean","pred2_max","pred2_std",
-            "chamfer_symmetric_pred1","chamfer_symmetric_pred2",
-        ]
-        # write per-sample rows
-        with open(samples_csv_path, "w", encoding="utf-8") as f:
-            f.write(",".join(headers) + "\n")
-            for row in sample_rows:
-                outs = []
-                for v in row:
-                    outs.append(f"{v:.10f}" if isinstance(v, (float, np.floating)) else str(v))
-                f.write(",".join(outs) + "\n")
-        print(f"[OK] Wrote per-sample CSV → {samples_csv_path}")
+    # CSV with per-sample numbers + store column arrays and global means
+    if sample_rows:
+        # per-sample CSV 
+        if WRITE_SAMPLES_CSV:
+            headers = [
+                "sample_id",
+                "gt_mean","gt_max","gt_std",
+                "pred1_mean","pred1_max","pred1_std",
+                "pred2_mean","pred2_max","pred2_std",
+                "chamfer_symmetric_pred1","chamfer_symmetric_pred2",
+            ]
+            with open(samples_csv_path, "w", encoding="utf-8") as f:
+                f.write(",".join(headers) + "\n")
+                for row in sample_rows:
+                    outs = []
+                    for v in row:
+                        outs.append(f"{v:.10f}" if isinstance(v, (float, np.floating)) else str(v))
+                    f.write(",".join(outs) + "\n")
+            print(f"[OK] Wrote per-sample CSV → {samples_csv_path}")
 
-        # store per-sample columns as numpy arrays
+        # per-sample columns as numpy arrays
         cols = list(zip(*sample_rows))
         # 0: sample_id
         gt_mean_array    = np.asarray(cols[1], dtype=float)
@@ -240,18 +246,43 @@ if __name__ == "__main__":
         chamfer_sym_pred1_mean_all = float(np.nanmean(chamfer_sym_pred1_array))
         chamfer_sym_pred2_mean_all = float(np.nanmean(chamfer_sym_pred2_array))
 
-        # append one summary row to the same CSV
-        with open(samples_csv_path, "a", encoding="utf-8") as f:
-            summary_row = [
-                "MEAN",           # sample_id
-                "", "", "",       # gt_mean, gt_max, gt_std (optional)
-                "", "", "",       # pred1_mean, pred1_max, pred1_std
-                "", "", "",       # pred2_mean, pred2_max, pred2_std
-                f"{chamfer_sym_pred1_mean_all:.10f}",
-                f"{chamfer_sym_pred2_mean_all:.10f}",
+        # global pooled stats across all samples (GT, preds, differences)
+        gt_mean_all,    gt_max_all,    gt_std_all    = gt_stats.mean,    gt_stats.max,    gt_stats.std
+        pred1_mean_all, pred1_max_all, pred1_std_all = pred1_stats.mean, pred1_stats.max, pred1_stats.std
+        pred2_mean_all, pred2_max_all, pred2_std_all = pred2_stats.mean, pred2_stats.max, pred2_stats.std
+        diff1_mean_all, diff1_max_all, diff1_std_all = diff1_stats.mean, diff1_stats.max, diff1_stats.std
+        diff2_mean_all, diff2_max_all, diff2_std_all = diff2_stats.mean, diff2_stats.max, diff2_stats.std
+
+        #  totals CSV with global mean / max / std 
+        if WRITE_TOTALS_CSV:
+            totals_headers = [
+                "gt_mean","gt_max","gt_std",
+                "pred1_mean","pred1_max","pred1_std",
+                "pred2_mean","pred2_max","pred2_std",
+                "diff1_mean","diff1_max","diff1_std",
+                "diff2_mean","diff2_max","diff2_std",
+                "chamfer_symmetric_pred1_mean","chamfer_symmetric_pred2_mean",
+                "num_samples"
             ]
-            f.write(",".join(summary_row) + "\n")
-        print(f"[OK] Appended global mean Chamfer to CSV → {samples_csv_path}")
+            totals_values = [
+                gt_mean_all, gt_max_all, gt_std_all,
+                pred1_mean_all, pred1_max_all, pred1_std_all,
+                pred2_mean_all, pred2_max_all, pred2_std_all,
+                diff1_mean_all, diff1_max_all, diff1_std_all,
+                diff2_mean_all, diff2_max_all, diff2_std_all,
+                chamfer_sym_pred1_mean_all, chamfer_sym_pred2_mean_all,
+                len(sample_rows)
+            ]
+            with open(totals_csv_path, "w", encoding="utf-8") as f:
+                f.write(",".join(totals_headers) + "\n")
+                parts = []
+                for v in totals_values:
+                    if isinstance(v, (float, np.floating)):
+                        parts.append(f"{v:.10f}")
+                    else:
+                        parts.append(str(v))
+                f.write(",".join(parts) + "\n")
+            print(f"[OK] Wrote dataset totals CSV → {totals_csv_path}")
 
     # Boxplot: per-node distributions
     if MAKE_BOXPLOTS and all_mag_gt:
@@ -292,7 +323,7 @@ if __name__ == "__main__":
                 "Vertex-based Hybrid Approach": mag_pred1_all,
                 "Edge-based Hybrid Approach":   mag_pred2_all,
             },
-            f" Springback magnitude (op{operation})",
+            f" Springback Magnitude (op{operation})",
             f"{experiment_name}_boxplot_gt_pred1_pred2_pernode.png",
             ylabel="Springback Displacement"
         )
@@ -303,7 +334,7 @@ if __name__ == "__main__":
                 "Vertex-based Hybrid Approach": difference1_all,
                 "Edge-based Hybrid Approach":   difference2_all,
             },
-            f"Springback difference (op{operation})",
+            f"Springback Difference (op{operation})",
             f"{experiment_name}_boxplot_pred1_pred2_diff_pernode.png",
             ylabel="Springback Difference (|Prediction − Ground Truth|)"
         )
