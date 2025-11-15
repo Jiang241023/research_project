@@ -279,7 +279,7 @@ if __name__ == "__main__":
             data   = [np.asarray(v, dtype=float) for v in data_dict.values()]
             ax.boxplot(
                 data,
-                labels=labels,
+                tick_labels=labels,
                 showmeans=False,
                 meanline=True,
                 vert=True,
