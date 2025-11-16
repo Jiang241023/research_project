@@ -1,3 +1,4 @@
+"""This file is from GRIT:https://github.com/LiamMa/GRIT/blob/main/grit"""
 import torch.nn as nn
 from torch_geometric.graphgym.config import cfg
 from torch_geometric.graphgym.models.layer import new_layer_config, MLP

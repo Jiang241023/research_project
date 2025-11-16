@@ -1,3 +1,5 @@
+"""This file is from GRIT:https://github.com/LiamMa/GRIT/blob/main/grit"""
+
 import numpy as np
 import torch
 import torch.nn as nn

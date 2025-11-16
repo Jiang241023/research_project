@@ -1,3 +1,4 @@
+"""This file is from GRIT: https://github.com/LiamMa/GRIT/blob/main/grit"""
 import torch
 import torch_geometric.graphgym.register as register
 from torch_geometric.graphgym.config import cfg

@@ -115,11 +115,11 @@ def plot_one_sample(sim_id, node_coords, disp_gt, disp_pred, save_path):
 if __name__ == "__main__":
 
     # Config
-    operation   = 10
-    timestep    = 2
+    operation   = 20 # 10 or 20
+    timestep    = 0 # 2 or 0
     # pred_dir    = "/home/RUS_CIP/st186731/research_project/RP-3875/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/grit_like"
     # pred_dir    = "/home/RUS_CIP/st186731/research_project/RP-3875/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/graphormer_like"
-    pred_dir    = "/home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/grit_like_fullsamples_15epoch_alpha1_beta1_withlap"
+    pred_dir    = "/home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/grit_like"
     data_dir    = Path("/mnt/data/darus/")
 
     FIGURE_SIZES = {"double_col": (7.0, 3.0)}
@@ -129,9 +129,15 @@ if __name__ == "__main__":
     VIEW_ELEVATION = 30
     VIEW_AZIMUTH   = 45
 
-    # save_dir = Path("RP-3875/figures/grit_like")
-    save_dir = Path("/home/RUS_CIP/st186731/research_project/figures/grit_like_fullsamples_15epoch_alpha1_beta1_withlap")
-    save_dir.mkdir(parents=True, exist_ok=True)
+    if operation == 10 and timestep == 2:
+        save_dir    = Path("/home/RUS_CIP/st186731/research_project/figures/op10/grit_like")
+        save_dir.mkdir(parents=True, exist_ok=True)
+    elif operation == 20 and timestep == 0:
+        save_dir = Path("/home/RUS_CIP/st186731/research_project/figures/op20/grit_like_fullsamples_15epoch_alpha1_beta1_withlap")
+        save_dir.mkdir(parents=True, exist_ok=True)
+        
+    else:
+        raise ValueError("please check the operation and timestep")
 
     MODEL_TAG = Path(pred_dir).name  # e.g., "grit_like" — used in filenames
 

@@ -2,7 +2,7 @@ out_dir: results
 metric_best: mae # use validation MAE (mean absolute error) to pick the best epoch
 metric_agg: argmin # Use argmin for lower-is-better metrics (MAE, MSE, RMSE, CE/NLL).
 tensorboard_each_run: True
-
+accelerator: cuda:1
 
 dataset:
   format: PyG-DDACSNPZStream
@@ -60,8 +60,8 @@ gnn:
 optim:
   optimizer: adamW
   weight_decay: 1e-4
-  base_lr: 0.0005
-  max_epoch: 100
+  base_lr: 0.001
+  max_epoch: 20
   scheduler: cosine_with_warmup
-  num_warmup_epochs: 15
+  num_warmup_epochs: 3
 

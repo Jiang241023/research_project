@@ -1,5 +1,5 @@
 import datetime
-import os, sys
+import os, sys, shutil
 import torch
 import torch.nn as nn
 import logging
@@ -112,11 +112,13 @@ def custom_set_out_dir(cfg, cfg_fname, name_tag):
 def custom_set_run_dir(cfg, run_id):
     """Custom output directory naming for each experiment run."""
     cfg.run_dir = os.path.join(cfg.out_dir, str(run_id))
-    # Make output directory
     if cfg.train.auto_resume:
         os.makedirs(cfg.run_dir, exist_ok=True)
     else:
-        makedirs_rm_exist(cfg.run_dir)
+        # was: makedirs_rm_exist(cfg.run_dir)
+        if os.path.isdir(cfg.run_dir):
+            shutil.rmtree(cfg.run_dir) # If it exists, delete the whole folder
+        os.makedirs(cfg.run_dir, exist_ok=True)
 
 def run_loop_settings():
     """Create main loop execution settings based on the current cfg."""
