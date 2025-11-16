@@ -1,5 +1,4 @@
-import os
-import re
+import os, re  
 import numpy as np
 from pathlib import Path
 from DDACSDataset import DDACSDataset
@@ -7,9 +6,8 @@ from utils_DDACS import extract_mesh, extract_point_springback
 from scipy.spatial import cKDTree as KDTree
 import matplotlib.pyplot as plt
 
-#  Utils 
+# utils
 def find_h5_by_id(dataset, sid):
-    """Return (sim_id, metadata, h5_path) for the given string/int sample id."""
     sid = str(sid)
     for i in range(len(dataset)):
         sim_id, meta, h5_path = dataset[i]
@@ -17,261 +15,283 @@ def find_h5_by_id(dataset, sid):
             return sim_id, meta, h5_path
     raise FileNotFoundError(f"Sample id {sid} not found in dataset")
 
+# For Chamfer distance
 def nearest_neighbor_distances(query_points, reference_points):
-    """Per-point NN distances from query_points to reference_points (L2).
-       KDTree:"k-dimensional tree.” 
-    """
     tree = KDTree(reference_points)
     distances, _ = tree.query(query_points, k=1, workers=-1)
     return distances.astype(np.float64)
 
-# Streaming pooled stats (mean/std/max) over arbitrary many arrays
 class RunningStats:
-    """Streaming mean/std/max over arbitrarily many 1D/ND arrays."""
     def __init__(self):
         self.total_count = 0
         self.running_sum = 0.0
         self.running_sum_of_squares = 0.0
         self.running_max = -np.inf
-
     def update(self, values):
-        values = np.asarray(values, dtype=np.float64).ravel() # .ravel() returns a 1-D view of the array when possible; otherwise a copy.
+        values = np.asarray(values, dtype=np.float64).ravel()
         if values.size == 0:
             return
         self.total_count += values.size
         self.running_sum += float(values.sum())
         self.running_sum_of_squares += float((values ** 2).sum())
-        current_batch_max = float(values.max())
-        if current_batch_max > self.running_max:
-            self.running_max = current_batch_max
+        self.running_max = max(self.running_max, float(values.max()))
 
     @property
     def mean(self):
-        count = self.total_count
-        if count <= 0:
-            return float("nan")
-        return self.running_sum / count
+        if self.total_count <= 0:
+            out = float("nan")
+        else:
+            out = self.running_sum / self.total_count
+        return out
 
     @property
     def std(self):
         if self.total_count == 0:
             return float("nan")
-        current_mean = self.mean
-        current_variance = max(0.0, self.running_sum_of_squares / self.total_count - current_mean ** 2)
-        return current_variance ** 0.5
+        m = self.mean
+        var = max(0.0, self.running_sum_of_squares / self.total_count - m ** 2)
+        return var ** 0.5
 
     @property
     def max(self):
         return self.running_max
 
-# Scan prediction files
 def scan_prediction_files(pred_dir):
-    """Return list of (sample_id, full_path) for *_pred_node_displacement.npy files."""
-    pattern = re.compile(r"^(\d+)_pred_node_displacement\.npy$")
-    out = []
+    pat = re.compile(r"^(\d+)_pred_node_displacement\.npy$")
+    out = {}
     for name in os.listdir(pred_dir):
-        match = pattern.match(name)
-        if match:
-            out.append((match.group(1), os.path.join(pred_dir, name)))
-    out.sort(key=lambda t: int(t[0])) # Sorts the list numerically by sample_id. t[0] is the sample_id string; int(t[0]) ensures 2, 10, 100 order
-    return out
-
-# For storing all samples
+        m = pat.match(name)
+        if m:
+            sid = m.group(1)
+            out[sid] = os.path.join(pred_dir, name)
+    return out  
 def summarize(values):
-    values = np.asarray(values, dtype=np.float64).ravel()
-    if values.size == 0:
+    v = np.asarray(values, dtype=np.float64).ravel()
+    if v.size == 0:
         return (np.nan, np.nan, np.nan)
-    return (float(values.mean()), float(values.max()), float(values.std()))
+    return (float(v.mean()), float(v.max()), float(v.std()))
 
-# Main 
+# main (plot per-node displacement magnitudes across all samples)
 if __name__ == "__main__":
-    # Config 
-    operation   = 20    # 10 or 20
-    timestep    = 0     # 2 or 0
-    # pred_dir    = "/home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/grit_like"
-    pred_dir    = "/home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/grit_like_op20_grit_like_fullsamples_15epoch_alpha1_beta1_withlap"
-    data_dir    = Path("/mnt/data/darus/")
-    experiment_name = "op20_grit_like_fullsamples_15epoch_alpha1_beta1_withlap"
+    # Config
+    operation = 10  # 10 or 20
+    timestep  = 2   # 2 or 0
 
-    # save a one-row CSV with totals
-    WRITE_CSV   = True
-    WRITE_SAMPLES_CSV   = True
-    MAKE_BOXPLOTS = True
+    #  set two experiment folders
+    pred_dir_1 = "/home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/grit_like-fullsamples-10epochs-alpha0.8-beta0.2-grit_likewithlap"
+    pred_dir_2 = "/home/RUS_CIP/st186731/research_project/hybrid_approach/grit_like_and_graphormer_like/prediction/ddacs-node-regression/graphormer_like-fullsamples-10epochs-alpha0.8-beta0.2-graphormer_likewithlap"
+
+    data_dir   = Path("/mnt/data/darus/")
+    experiment_name = "compare_grit_like_vs_graphormer_like_op10_1"
+
+    MAKE_BOXPLOTS      = True
+    WRITE_SAMPLES_CSV  = True
+    WRITE_TOTALS_CSV   = True
+
     if operation == 10 and timestep == 2:
-        save_dir    = Path("/home/RUS_CIP/st186731/research_project/hybrid_approach/evaluation_output/op10")
-        save_dir.mkdir(parents=True, exist_ok=True)
+        save_dir = Path("/home/RUS_CIP/st186731/research_project/RP-3875/hybrid_approach/Evaluation_output/op10")
     elif operation == 20 and timestep == 0:
-        save_dir    = Path("/home/RUS_CIP/st186731/research_project/hybrid_approach/evaluation_output/op20")
-        save_dir.mkdir(parents=True, exist_ok=True)
+        save_dir = Path("/home/RUS_CIP/st186731/research_project/RP-3875/hybrid_approach/Evaluation_output/op20")
     else:
         raise ValueError("please check the operation and timestep")
-        
-    totals_csv_path = save_dir / f"{experiment_name}_dataset_totals.csv"
+    save_dir.mkdir(parents=True, exist_ok=True)
+
     samples_csv_path = save_dir / f"{experiment_name}_per_sample.csv"
+    totals_csv_path  = save_dir / f"{experiment_name}_dataset_totals.csv"
 
-    # Load dataset index
+    # Load dataset & predictions
     dataset = DDACSDataset(data_dir, "h5")
-    pairs = scan_prediction_files(pred_dir)
-    if not pairs:
-        raise SystemExit(f"No *_pred_node_displacement.npy files in: {pred_dir}")
+    preds1  = scan_prediction_files(pred_dir_1)   # sid -> file
+    preds2  = scan_prediction_files(pred_dir_2)   # sid -> file
 
-    # Pooled stats across ALL nodes in ALL samples
-    gt_stats   = RunningStats()
-    pred_stats = RunningStats()
-    diff_stats = RunningStats()
-    cham_gt_pred  = RunningStats()
-    cham_pred_gt   = RunningStats()
-    processed   = 0
-    skipped     = 0
+    # Work on the intersection of sample IDs present in both experiments
+    common_ids = sorted(set(preds1.keys()).intersection(preds2.keys()), key=int)
+    if not common_ids:
+        raise SystemExit("No overlapping prediction files between the two experiments.")
 
-    sample_rows = []
-    for k, (sid, path) in enumerate(pairs, 1):
+    # Stats (pooled across all nodes of all samples)
+    gt_stats      = RunningStats()
+    pred1_stats   = RunningStats()
+    pred2_stats   = RunningStats()
+    diff1_stats   = RunningStats()
+    diff2_stats   = RunningStats()
+
+    sample_rows = []  # one row per sample
+
+    # collect all per-node magnitudes for boxplot
+    all_mag_gt      = []
+    all_mag_pred1   = []
+    all_mag_pred2   = []
+    all_difference1 = []
+    all_difference2 = []
+
+    for k, sid in enumerate(common_ids, 1):
         try:
-            # Locate H5
-            sim_id, metadata, h5_path = find_h5_by_id(dataset, sid)
+            sim_id, meta, h5_path = find_h5_by_id(dataset, sid)
 
-            # Mesh + ground truth
+            # Mesh + GT
             node_coords, triangles = extract_mesh(
-                h5_path, operation=operation, component='blank', timestep=timestep
+                h5_path, operation=operation,
+                component='blank', timestep=timestep
             )
-            final_coords_gt, disp_gt = extract_point_springback(h5_path, operation=operation)
+            final_coords_gt, displacement_gt = extract_point_springback(
+                h5_path, operation=operation
+            )
 
-            # Prediction
-            disp_pred = np.load(path)
-            if disp_pred.shape != disp_gt.shape:
-                raise ValueError(f"shape mismatch for id={sid}: pred {disp_pred.shape} vs gt {disp_gt.shape}")
+            # Predictions
+            displacement_pred1 = np.load(preds1[sid])
+            displacement_pred2 = np.load(preds2[sid])
 
-            # Magnitudes and differences
-            mag_gt   = np.linalg.norm(disp_gt,   axis=1)
-            mag_pred = np.linalg.norm(disp_pred, axis=1)
-            diff_mag = np.linalg.norm(disp_pred - disp_gt, axis=1)
+            if displacement_pred1.shape != displacement_gt.shape:
+                raise ValueError(f"[{sid}] exp1 shape {displacement_pred1.shape} != gt {displacement_gt.shape}")
+            if displacement_pred2.shape != displacement_gt.shape:
+                raise ValueError(f"[{sid}] exp2 shape {displacement_pred2.shape} != gt {displacement_gt.shape}")
 
-            # Chamfer on final positions
-            final_coords_pred = node_coords + disp_pred
-            
-            # nearest-neighbor distances from GT final coords to Pred final coords and nearest-neighbor distances from Pred final coords to GT final coords
-            distances_gt_pred = nearest_neighbor_distances(final_coords_gt,  final_coords_pred)  # GT→Pred
-            distances_pred_gt = nearest_neighbor_distances(final_coords_pred, final_coords_gt)  # Pred→GT
+            # Magnitudes
+            mag_gt     = np.linalg.norm(displacement_gt, axis=1)
+            mag_pred1  = np.linalg.norm(displacement_pred1, axis=1)
+            mag_pred2  = np.linalg.norm(displacement_pred2, axis=1)
 
-            # Update pooled stats
+            # Per-node absolute differences vs GT
+            difference_1 = np.linalg.norm(displacement_pred1 - displacement_gt, axis=1)
+            difference_2 = np.linalg.norm(displacement_pred2 - displacement_gt, axis=1)
+
+            # Chamfer distances (symmetric) for both models
+            final_coords_pred1 = node_coords + displacement_pred1
+            final_coords_pred2 = node_coords + displacement_pred2
+
+            # GT ↔ Pred1
+            distances1_gt_pred = nearest_neighbor_distances(final_coords_gt,  final_coords_pred1)  # GT→Pred1
+            distances1_pred_gt = nearest_neighbor_distances(final_coords_pred1, final_coords_gt)   # Pred1→GT
+            chamfer_sym_pred1  = float(distances1_gt_pred.mean() + distances1_pred_gt.mean())
+
+            # GT ↔ Pred2
+            distances2_gt_pred = nearest_neighbor_distances(final_coords_gt,  final_coords_pred2)  # GT→Pred2
+            distances2_pred_gt = nearest_neighbor_distances(final_coords_pred2, final_coords_gt)   # Pred2→GT
+            chamfer_sym_pred2  = float(distances2_gt_pred.mean() + distances2_pred_gt.mean())
+
+            # accumulate per-node magnitudes for global boxplots
+            all_mag_gt.append(mag_gt)
+            all_mag_pred1.append(mag_pred1)
+            all_mag_pred2.append(mag_pred2)
+            all_difference1.append(difference_1)
+            all_difference2.append(difference_2)
+
+            # streaming stats across all samples
             gt_stats.update(mag_gt)
-            pred_stats.update(mag_pred)
-            diff_stats.update(diff_mag)
-            cham_gt_pred.update(distances_gt_pred)
-            cham_pred_gt.update(distances_pred_gt)
+            pred1_stats.update(mag_pred1)
+            pred2_stats.update(mag_pred2)
+            diff1_stats.update(difference_1)
+            diff2_stats.update(difference_2)
 
-            gt_mean_summarize, gt_max_summarize, gt_std_summarize = summarize(mag_gt)
-            pred_mean_summarize, pred_max_summarize, pred_std_summarize = summarize(mag_pred)
-            diff_mean_summarize, diff_max_summarize, diff_std_summarize = summarize(diff_mag)
-            cham_gt_pred_mean_summarize, cham_gt_pred_max_summarize,cham_gt_pred_std_summarize = summarize(distances_gt_pred)
-            cham_pred_gt_mean_summarize, cham_pred_gt_max_summarize, cham_pred_gt_std_summarize = summarize(distances_pred_gt)
-            cham_sym = cham_gt_pred_mean_summarize + cham_pred_gt_mean_summarize  
+            # Per-sample summaries (for CSV only)
+            gt_mean_summarize,    gt_max_summarize,    gt_std_summarize      = summarize(mag_gt)
+            pred1_mean_summarize, pred1_max_summarize, pred1_std_summarize   = summarize(mag_pred1)
+            pred2_mean_summarize, pred2_max_summarize, pred2_std_summarize   = summarize(mag_pred2)
 
+            # Store per-sample row
             sample_rows.append([
                 int(sid),
-                gt_mean_summarize, gt_max_summarize, gt_std_summarize,
-                pred_mean_summarize, pred_max_summarize, pred_std_summarize,
-                diff_mean_summarize, diff_max_summarize, diff_std_summarize,
-                cham_gt_pred_mean_summarize, cham_gt_pred_max_summarize,cham_gt_pred_std_summarize,
-                cham_pred_gt_mean_summarize, cham_pred_gt_max_summarize, cham_pred_gt_std_summarize,
-                cham_sym
-                ])
+                gt_mean_summarize,    gt_max_summarize,    gt_std_summarize,
+                pred1_mean_summarize, pred1_max_summarize, pred1_std_summarize,
+                pred2_mean_summarize, pred2_max_summarize, pred2_std_summarize,
+                chamfer_sym_pred1, chamfer_sym_pred2
+            ])
 
-            processed   += 1
+            if (k % 10 == 0) or (k == len(common_ids)):
+                print(f"[{k}/{len(common_ids)}] processed")
 
-            # Optional progress
-            if (k % 10 == 0) or (k == len(pairs)):
-                print(f"[{k}/{len(pairs)}] processed")
         except Exception as e:
-            skipped += 1
             print(f"[WARN] Skipping id={sid}: {e}")
 
-    # Dataset-level (pooled) totals
-    chamfer_symmetric_mean = cham_gt_pred.mean + cham_pred_gt.mean
+    # CSV with per-sample numbers + store column arrays and global means
+    if sample_rows:
+        # per-sample CSV 
+        if WRITE_SAMPLES_CSV:
+            headers = [
+                "sample_id",
+                "gt_mean","gt_max","gt_std",
+                "pred1_mean","pred1_max","pred1_std",
+                "pred2_mean","pred2_max","pred2_std",
+                "chamfer_symmetric_pred1","chamfer_symmetric_pred2",
+            ]
+            with open(samples_csv_path, "w", encoding="utf-8") as f:
+                f.write(",".join(headers) + "\n")
+                for row in sample_rows:
+                    outs = []
+                    for v in row:
+                        outs.append(f"{v:.10f}" if isinstance(v, (float, np.floating)) else str(v))
+                    f.write(",".join(outs) + "\n")
+            print(f"[OK] Wrote per-sample CSV → {samples_csv_path}")
 
-    print("\n--- Springback stats (TOTAL across all nodes) ---")
-    print(f"Ground_Truth : mean={gt_stats.mean:.4f},  max={gt_stats.max:.4f},  std={gt_stats.std:.4f}")
-    print(f"Prediction   : mean={pred_stats.mean:.4f}, max={pred_stats.max:.4f}, std={pred_stats.std:.4f}")
-    print(f"Difference(L2 per-node) : mean={diff_stats.mean:.4f},  max={diff_stats.max:.4f},  std={diff_stats.std:.4f}")
-
-    print("\n--- Chamfer stats (L2, TOTAL) ---")
-    print(f"(GT→Pred): mean={cham_gt_pred.mean:.6f}, max={cham_gt_pred.max:.6f}, std={cham_gt_pred.std:.6f}")
-    print(f"(Pred→GT): mean={cham_pred_gt.mean:.6f}, max={cham_pred_gt.max:.6f}, std={cham_pred_gt.std:.6f}")
-    print(f"Symmetric        : {chamfer_symmetric_mean:.6f}")
-    print(f"\nProcessed {processed}/{len(pairs)} files")
-
-    if WRITE_CSV:
-        headers = [
-            "gt_mean","gt_max","gt_std",
-            "pred_mean","pred_max","pred_std",
-            "diff_mean","diff_max","diff_std",
-            "chamfer_distance_gt_pred_mean","chamfer_distance_gt_pred_max","chamfer_distance_gt_pred_std",
-            "chamfer_distance_pred_gt_mean","chamfer_distance_pred_gt_max","chamfer_distance_pred_gt_std",
-            "chamfer_distance_symmetric","num_files","skipped"
-        ]
-        values = [
-            gt_stats.mean, gt_stats.max, gt_stats.std,
-            pred_stats.mean, pred_stats.max, pred_stats.std,
-            diff_stats.mean, diff_stats.max, diff_stats.std,
-            cham_gt_pred.mean, cham_gt_pred.max, cham_gt_pred.std,
-            cham_pred_gt.mean, cham_pred_gt.max, cham_pred_gt.std,
-            chamfer_symmetric_mean, processed, skipped
-        ]
-        with open(totals_csv_path, "w", encoding="utf-8") as f:
-            f.write(",".join(headers) + "\n")
-            parts = []
-            for v in values:
-                if isinstance(v, (float, np.floating)):
-                    s = f"{v:.10f}"
-                else:
-                    s = str(v)
-                parts.append(s)
-            f.write(",".join(parts) + "\n")
-        print(f"[OK] Wrote totals CSV → {totals_csv_path}")
-
-    if WRITE_SAMPLES_CSV and len(sample_rows) > 0:
-        sample_headers = [
-            "sample_id",
-            "gt_mean","gt_max","gt_std",
-            "pred_mean","pred_max","pred_std",
-            "diff_mean","diff_max","diff_std",
-            "chamfer_distance_gt_pred_mean","chamfer_distance_gt_pred_max","chamfer_distance_gt_pred_std",
-            "chamfer_distance_pred_gt_mean","chamfer_distance_pred_gt_max","chamfer_distance_pred_gt_std",
-            "chamfer_distance_symmetric"
-        ]
-        with open(samples_csv_path, "w", encoding="utf-8") as f:
-            f.write(",".join(sample_headers) + "\n")
-            for row in sample_rows:
-                out = []
-                for v in row:
-                    if isinstance(v, (float, np.floating)):
-                        out.append(f"{v:.10f}")
-                    else:
-                        out.append(str(v))
-                f.write(",".join(out) + "\n")
-        print(f"[OK] Wrote per-sample CSV → {samples_csv_path}")
-    
-    if MAKE_BOXPLOTS and len(sample_rows) > 0:
-        # transpose rows -> columns for easy slicing
+        # per-sample columns as numpy arrays
         cols = list(zip(*sample_rows))
-        # columns follow sample_headers order:
         # 0: sample_id
-        gt_mean_array   = np.asarray(cols[1],  dtype=float)
-        gt_max_array    = np.asarray(cols[2],  dtype=float)
-        gt_std_array    = np.asarray(cols[3],  dtype=float)
-        pred_mean_array = np.asarray(cols[4],  dtype=float)
-        pred_max_array  = np.asarray(cols[5],  dtype=float)
-        pred_std_array  = np.asarray(cols[6],  dtype=float)
-        diff_mean_array = np.asarray(cols[7],  dtype=float)
-        diff_max_array  = np.asarray(cols[8],  dtype=float)
-        diff_std_array  = np.asarray(cols[9],  dtype=float)
-        cham_gt_pred_mean_array = np.asarray(cols[10], dtype=float)
-        cham_gt_pred_max_array  = np.asarray(cols[11], dtype=float)
-        cham_gt_pred_std_array  = np.asarray(cols[12], dtype=float)
-        cham_pred_gt_mean_array = np.asarray(cols[13], dtype=float)
-        cham_pred_gt_max_array  = np.asarray(cols[14], dtype=float)
-        cham_pred_gt_std_array  = np.asarray(cols[15], dtype=float)
-        cham_sym_array          = np.asarray(cols[16], dtype=float)
+        gt_mean_array    = np.asarray(cols[1], dtype=float)
+        gt_max_array     = np.asarray(cols[2], dtype=float)
+        gt_std_array     = np.asarray(cols[3], dtype=float)
+
+        pred1_mean_array = np.asarray(cols[4], dtype=float)
+        pred1_max_array  = np.asarray(cols[5], dtype=float)
+        pred1_std_array  = np.asarray(cols[6], dtype=float)
+
+        pred2_mean_array = np.asarray(cols[7], dtype=float)
+        pred2_max_array  = np.asarray(cols[8], dtype=float)
+        pred2_std_array  = np.asarray(cols[9], dtype=float)
+
+        chamfer_sym_pred1_array = np.asarray(cols[10], dtype=float)
+        chamfer_sym_pred2_array = np.asarray(cols[11], dtype=float)
+
+        # mean Chamfer distance across all samples (per experiment)
+        chamfer_sym_pred1_mean_all = float(np.nanmean(chamfer_sym_pred1_array))
+        chamfer_sym_pred2_mean_all = float(np.nanmean(chamfer_sym_pred2_array))
+
+        # global pooled stats across all samples (GT, preds, differences)
+        gt_mean_all,    gt_max_all,    gt_std_all    = gt_stats.mean,    gt_stats.max,    gt_stats.std
+        pred1_mean_all, pred1_max_all, pred1_std_all = pred1_stats.mean, pred1_stats.max, pred1_stats.std
+        pred2_mean_all, pred2_max_all, pred2_std_all = pred2_stats.mean, pred2_stats.max, pred2_stats.std
+        diff1_mean_all, diff1_max_all, diff1_std_all = diff1_stats.mean, diff1_stats.max, diff1_stats.std
+        diff2_mean_all, diff2_max_all, diff2_std_all = diff2_stats.mean, diff2_stats.max, diff2_stats.std
+
+        #  totals CSV with global mean / max / std 
+        if WRITE_TOTALS_CSV:
+            totals_headers = [
+                "gt_mean","gt_max","gt_std",
+                "pred1_mean","pred1_max","pred1_std",
+                "pred2_mean","pred2_max","pred2_std",
+                "diff1_mean","diff1_max","diff1_std",
+                "diff2_mean","diff2_max","diff2_std",
+                "chamfer_symmetric_pred1_mean","chamfer_symmetric_pred2_mean",
+                "num_samples"
+            ]
+            totals_values = [
+                gt_mean_all, gt_max_all, gt_std_all,
+                pred1_mean_all, pred1_max_all, pred1_std_all,
+                pred2_mean_all, pred2_max_all, pred2_std_all,
+                diff1_mean_all, diff1_max_all, diff1_std_all,
+                diff2_mean_all, diff2_max_all, diff2_std_all,
+                chamfer_sym_pred1_mean_all, chamfer_sym_pred2_mean_all,
+                len(sample_rows)
+            ]
+            with open(totals_csv_path, "w", encoding="utf-8") as f:
+                f.write(",".join(totals_headers) + "\n")
+                parts = []
+                for v in totals_values:
+                    if isinstance(v, (float, np.floating)):
+                        parts.append(f"{v:.10f}")
+                    else:
+                        parts.append(str(v))
+                f.write(",".join(parts) + "\n")
+            print(f"[OK] Wrote dataset totals CSV → {totals_csv_path}")
+
+    # Boxplot: per-node distributions
+    if MAKE_BOXPLOTS and all_mag_gt:
+        # flatten all nodes from all samples
+        mag_gt_all      = np.concatenate(all_mag_gt)
+        mag_pred1_all   = np.concatenate(all_mag_pred1)
+        mag_pred2_all   = np.concatenate(all_mag_pred2)
+        difference1_all = np.concatenate(all_difference1)
+        difference2_all = np.concatenate(all_difference2)
 
         def make_boxplot(data_dict, title, outfile, ylabel=None, showfliers=False):
             fig, ax = plt.subplots(figsize=(9, 5), dpi=150)
@@ -296,16 +316,28 @@ if __name__ == "__main__":
             plt.close(fig)
             print(f"[OK] Saved box plot → {out_path}")
 
+        # Springback magnitude (per-node)
         make_boxplot(
             {
-                "GT mean": gt_mean_array,
-                "Pred mean": pred_mean_array,
-                "Diff mean": diff_mean_array
+                "Ground Truth":                 mag_gt_all,
+                "Vertex-based Hybrid Approach": mag_pred1_all,
+                "Edge-based Hybrid Approach":   mag_pred2_all,
             },
-            f"{experiment_name}: Springback magnitude (per-sample mean)",
-            f"{experiment_name}_boxplot_magnitude_mean.png",
-            ylabel="Displacement"
+            f" Springback Magnitude (op{operation})",
+            f"{experiment_name}_boxplot_gt_pred1_pred2_pernode.png",
+            ylabel="Springback Displacement"
         )
 
-# Example runs:
-#python /home/RUS_CIP/st186731/research_project/hybrid_approach/evaluation/evaluation.py
+        # Springback difference (per-node)
+        make_boxplot(
+            {
+                "Vertex-based Hybrid Approach": difference1_all,
+                "Edge-based Hybrid Approach":   difference2_all,
+            },
+            f"Springback Difference (op{operation})",
+            f"{experiment_name}_boxplot_pred1_pred2_diff_pernode.png",
+            ylabel="Springback Difference (|Prediction − Ground Truth|)"
+        )
+
+# Example run:
+#python /home/RUS_CIP/st186731/research_project/hybrid_approach/Evalutation/evaluation_2.py
