@@ -105,6 +105,7 @@ Yueyang Jiang (st186731)
 > There is one failure case (ddacs-node-regression-grit.yaml), but I keep the code for further study in the future. This approach has the out-of-memory issue.
 > ```
 
+# Springback prediction results for grit-like and graphormer-like hybrid approaches
 ![Springback prediction results](hybrid_approach/output_demonstration/springback_id16039_graphormer_like.png)
 ![Springback prediction results](hybrid_approach/output_demonstration/springback_id16039_graphormer_like_op20.png)
 ![Springback prediction results](hybrid_approach/output_demonstration/springback_id16039_grit_like.png)
