@@ -1,5 +1,5 @@
 # RT-3875
-Research Project:  Potential Interaction of Graph Reconstruction Methods and Transformers
+Research Project:  Springback Prediction based on Deep Drawing and Cutting Simulations (DDACS) Dataset
 
 # Name
 Yueyang Jiang (st186731)
